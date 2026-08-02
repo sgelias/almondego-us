@@ -1,6 +1,1 @@
 node_modules/
-
-# Background music. Not committed: ~83 MB of third-party tracks in a public
-# repo is redistribution, not use. Drop your own .mp3 files in assets/ and the
-# game picks them up; with the folder empty it simply plays no music.
-assets/

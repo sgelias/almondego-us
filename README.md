@@ -128,9 +128,19 @@ mesma sala. Quem chega atrasado recebe os recados anteriores.
 
 O jogo toca uma trilha de fundo, baixinho, com o que estiver em `assets/`
 (`.mp3`, `.ogg`, `.m4a`, `.wav`) — sorteada e encadeada durante a partida, e
-abaixada durante reuniões e tarefas. A pasta **não vai no repositório**: são
-arquivos grandes e de terceiros. Coloque os seus e o jogo os encontra sozinho;
-com a pasta vazia, ele simplesmente fica sem música.
+abaixada durante reuniões e tarefas. Basta colocar arquivos na pasta: o
+servidor lista o que existe, então não há código para mexer. Com a pasta
+vazia, o jogo simplesmente fica sem música.
+
+As faixas vão no repositório via **Git LFS**. Para cloná-las junto:
+
+```bash
+git lfs install
+git clone https://github.com/sgelias/almondego-us.git
+```
+
+Sem o `git lfs`, o clone traz ponteiros de texto no lugar dos áudios e o jogo
+roda em silêncio — nada quebra.
 
 O volume fica em `M` e `−`/`+` durante o jogo, e num controle deslizante na
 tela de pausa (`Esc`). A escolha é lembrada entre partidas.
