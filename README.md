@@ -8,22 +8,43 @@ Feito em JavaScript puro: sem build, sem bundler, sem framework.
 
 ## Instalar no Ubuntu
 
-Baixe o `.deb` da [página de releases](https://github.com/sgelias/almondego-us/releases)
-e instale:
+Copie e cole. Baixa sempre a versão mais recente e instala:
 
 ```bash
-sudo apt install ./almondegous_1.0.0_amd64.deb
+curl -fL -o almondegous.deb "$(curl -fsSL \
+  https://api.github.com/repos/sgelias/almondego-us/releases/latest \
+  | grep -o 'https://[^"]*_amd64\.deb')"
+sudo apt install ./almondegous.deb
 ```
 
 Depois é só abrir **AlmondegoUs** no menu de aplicativos, ou rodar
 `almondegous` no terminal. Ele sobe o jogo e abre o navegador sozinho.
 
-Não precisa instalar mais nada: o pacote traz o próprio Node e o próprio
-three.js, então funciona **sem internet** — o que importa numa sala com
-wifi ruim.
+Prefere clicar? O `.deb` está na
+[página de releases](https://github.com/sgelias/almondego-us/releases/latest);
+baixe e instale com `sudo apt install ./almondegous_*.deb`.
 
-Quem não usa `.deb` pode baixar o `.tar.gz` da mesma página, descompactar e
-rodar `./almondegous`.
+**Não precisa instalar mais nada.** O pacote não declara dependência nenhuma:
+traz o próprio Node e o próprio three.js. Por isso funciona **sem internet** —
+o que importa numa sala com wifi ruim. São ~103 MB, quase tudo trilha sonora.
+
+Para desinstalar:
+
+```bash
+sudo apt remove almondegous
+```
+
+### Sem `.deb`
+
+Serve para qualquer Linux x86-64, e não precisa de `sudo`:
+
+```bash
+curl -fL -o almondegous.tar.gz "$(curl -fsSL \
+  https://api.github.com/repos/sgelias/almondego-us/releases/latest \
+  | grep -o 'https://[^"]*linux-x64\.tar\.gz')"
+tar -xzf almondegous.tar.gz
+cd almondegous-*-linux-x64 && ./almondegous
+```
 
 ## Como rodar a partir do código
 
