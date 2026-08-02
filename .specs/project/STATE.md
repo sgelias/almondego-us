@@ -169,6 +169,13 @@ None currently blocking. Next planned work: Specify/Design/Tasks for the `bot-pl
 **Solution:** Measure displacement from first-seen position, and make the test client send `state` at 15 Hz exactly like `main.js` does. Both fixes changed the observed outcome immediately (5/5 bots moving; the bot impostor killing the human at t=16s).
 **Prevents:** A stub client is a model of a real client, and any behaviour the real client has that the stub omits is a hole the system under test will silently fall through. Before trusting a negative result from a harness, check that the harness actually performs the behaviours the code under test depends on - "the feature is broken" and "my fake client doesn't do the one thing that triggers the feature" look identical from the outside.
 
+### AD-008: Task minigames are educational, targeted at children up to ~10 (2026-08-02)
+
+**Decision:** The planned task minigames replace the uniform "hold E for 2s" with **educational** activities: (a) an easy arithmetic problem suitable for a child up to about 10, (b) read a short passage and answer comprehension questions about it, (c) questions that prompt the child to go and research an answer.
+**Reason:** User instruction, given unprompted while the aesthetics work was in progress: *"Os minigames devem ser educativos para forçar o usuário a resolver um calculo facil para cianças até 10 anos, ler um texto e responder questões sobre ele e perguntas que façam eles pesquisarem"*.
+**Trade-off:** This reframes the project from a pure Among Us clone toward an educational game, and it changes task pacing significantly - a reading-comprehension or research task takes far longer than 2 seconds, which interacts with match length, the impostor's kill cooldown, and how long a crewmate stands still (and therefore vulnerable) at a console. Content also has to be authored, and it should be in Portuguese to match the rest of the UI.
+**Impact:** The `task-minigames` feature must be specified around this rather than around Among Us's wiring/asteroids minigames. Open questions to settle when specifying: whether a research question can reasonably be answered inside a timed match or should be a longer/optional task type; whether wrong answers cost anything; and how question content is stored (a pure data module in `shared/`, following the existing `taskPool.js` pattern).
+
 ### AD-007: Map geometry is split into a collision group and a decor group (2026-08-02)
 
 **Decision:** `buildSkeldMap()` returns `{ group, collisionGroup, ... }`. Only floors and walls go into `collisionGroup`; ceilings, trim, light strips, consoles, vent grates and the emergency-button pedestal are decor. `buildWorldOctree` is handed `collisionGroup`, never the whole scene.
