@@ -1,0 +1,16 @@
+export const ROOM_LAYOUT = [
+  { id: 'cafeteria', center: [-11, 0, 33], size: [14, 3, 14], connections: ['weapons', 'admin', 'storage', 'medbay', 'upperEngine'] },
+  { id: 'weapons', center: [11, 0, 11], size: [8, 3, 8], connections: ['cafeteria', 'navigation', 'o2', 'shields'] },
+  { id: 'navigation', center: [33, 0, 33], size: [8, 3, 8], connections: ['weapons', 'o2', 'shields'] },
+  { id: 'o2', center: [33, 0, 11], size: [6, 3, 6], connections: ['weapons', 'navigation', 'shields'] },
+  { id: 'shields', center: [33, 0, -11], size: [8, 3, 8], connections: ['navigation', 'o2', 'weapons', 'communications', 'storage'] },
+  { id: 'communications', center: [33, 0, -33], size: [8, 3, 6], connections: ['shields', 'storage'] },
+  { id: 'storage', center: [11, 0, -33], size: [10, 3, 10], connections: ['cafeteria', 'communications', 'shields', 'electrical', 'lowerEngine'] },
+  { id: 'electrical', center: [-11, 0, -11], size: [8, 3, 8], connections: ['storage', 'lowerEngine', 'admin'] },
+  { id: 'lowerEngine', center: [-33, 0, -11], size: [8, 3, 8], connections: ['electrical', 'storage', 'security', 'reactor'] },
+  { id: 'upperEngine', center: [-33, 0, 11], size: [8, 3, 8], connections: ['cafeteria', 'security', 'reactor'] },
+  { id: 'security', center: [-11, 0, -33], size: [6, 3, 6], connections: ['upperEngine', 'lowerEngine', 'reactor'] },
+  { id: 'reactor', center: [-33, 0, -33], size: [8, 3, 10], connections: ['upperEngine', 'lowerEngine', 'security'] },
+  { id: 'medbay', center: [-11, 0, 11], size: [8, 3, 8], connections: ['cafeteria', 'admin'] },
+  { id: 'admin', center: [11, 0, -11], size: [8, 3, 8], connections: ['cafeteria', 'medbay', 'electrical'] },
+]

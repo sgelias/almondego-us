@@ -28,9 +28,10 @@ Not used in this project. Rendering, collision-in-the-actual-scene, mouselook fe
 
 ## Test Execution
 
-**Commands:**
+**Commands:** (verified against Node v24.18.0 — passing a bare directory to `--test` does not glob-discover files on this version, so use no-args auto-discovery or an explicit glob)
 
-- Run all unit tests: `node --test src`
+- Run all unit tests: `node --test` (auto-discovers every `*.test.js` recursively from cwd)
+- Run one area: `node --test 'src/map/**/*.test.js'`
 - Run a single file: `node --test src/map/skeldRooms.test.js`
 
 **Configuration:** None — Node's built-in runner needs no config file.
@@ -45,8 +46,8 @@ Not used in this project. Rendering, collision-in-the-actual-scene, mouselook fe
 
 | Code Layer | Required Test Type | Location Pattern | Run Command |
 | --- | --- | --- | --- |
-| Room layout data (`src/map/skeldRooms.js`) | unit | `src/map/skeldRooms.test.js` | `node --test src/map` |
-| Movement math — diagonal normalization, pitch clamp (`src/player/movementMath.js`) | unit | `src/player/movementMath.test.js` | `node --test src/player` |
+| Room layout data (`src/map/skeldRooms.js`) | unit | `src/map/skeldRooms.test.js` | `node --test 'src/map/**/*.test.js'` |
+| Movement math — diagonal normalization, pitch clamp (`src/player/movementMath.js`) | unit | `src/player/movementMath.test.js` | `node --test 'src/player/**/*.test.js'` |
 | Map geometry builder (`src/map/skeldMap.js`) | none | — | manual playtest |
 | World collider wrapper (`src/map/worldOctree.js`) | none | — | manual playtest |
 | Player controller (`src/player/playerController.js`) | none | — | manual playtest |
@@ -64,6 +65,6 @@ Not used in this project. Rendering, collision-in-the-actual-scene, mouselook fe
 
 | Gate Level | When to Use | Command |
 | --- | --- | --- |
-| Quick | After tasks with unit tests only | `node --test src` |
-| Full | After tasks touching Three.js/DOM-coupled code (no automated e2e exists) | `node --test src` + manual playtest per Done-when criteria |
-| Build | After phase completion | `node --test src` + full manual playthrough of the milestone's vertical slice |
+| Quick | After tasks with unit tests only | `node --test` |
+| Full | After tasks touching Three.js/DOM-coupled code (no automated e2e exists) | `node --test` + manual playtest per Done-when criteria |
+| Build | After phase completion | `node --test` + full manual playthrough of the milestone's vertical slice |

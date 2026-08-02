@@ -83,7 +83,7 @@ T1, T5, T6, T7, T8 ──→ T9  (main.js wiring + full manual playtest)
 
 **Done when**:
 - [ ] All 14 Skeld rooms present with center/size/connections
-- [ ] Gate check passes: `node --test src/map`
+- [ ] Gate check passes: `node --test 'src/map/**/*.test.js'`
 - [ ] Test count: at least 2 tests pass (symmetric connections, no dangling ids)
 
 **Tests**: unit
@@ -108,7 +108,7 @@ T1, T5, T6, T7, T8 ──→ T9  (main.js wiring + full manual playtest)
 **Done when**:
 - [ ] `normalizeMovementVector` never returns a vector with magnitude > 1
 - [ ] `clampPitch` never returns a value at or beyond ±π/2
-- [ ] Gate check passes: `node --test src/player`
+- [ ] Gate check passes: `node --test 'src/player/**/*.test.js'`
 - [ ] Test count: at least 4 tests pass
 
 **Tests**: unit
@@ -250,12 +250,12 @@ T1, T5, T6, T7, T8 ──→ T9  (main.js wiring + full manual playtest)
 - Skill: NONE
 
 **Done when**:
-- [ ] `node --test src` passes (all unit tests from T2, T3 still green)
+- [ ] `node --test` passes (all unit tests from T2, T3 still green)
 - [ ] Manual playtest (per spec.md Independent Tests): pointer lock engages on click; player walks through at least two rooms and a corridor with no clipping; sprint and head-bob are visibly distinct from base walk; diagonal movement isn't faster than cardinal; Esc shows the resume overlay; interact prompt appears near the placeholder interactable; window resize doesn't distort the view
 - [ ] All of spec.md's Success Criteria checked off
 
 **Tests**: none (bootstrap/integration — verified via full manual playtest, no dedicated test file)
-**Gate**: build — `node --test src` + full manual playthrough per spec.md Success Criteria
+**Gate**: build — `node --test` + full manual playthrough per spec.md Success Criteria
 
 **Commit**: `feat(main): wire scene, player, map, and UI into a playable vertical slice`
 
