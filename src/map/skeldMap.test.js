@@ -125,3 +125,79 @@ test('the collision octree builds without exhausting memory', () => {
   const octree = buildWorldOctree(collisionGroup)
   assert.ok(octree, 'octree failed to build')
 })
+
+test('a player-sized body can reach all 14 rooms from the spawn', () => {
+  // The property the player actually cares about: "não consigo acessar todo
+  // o mapa". Centreline sampling cannot prove this - it checks the routes
+  // the level designer intended, not whether they connect. This floods the
+  // entire walkable area with a player-radius body and checks every room
+  // falls inside one connected region.
+  const { walls, floors } = collectBoxes()
+  const STEP = 0.25
+
+  let xMin = Infinity
+  let xMax = -Infinity
+  let zMin = Infinity
+  let zMax = -Infinity
+  for (const b of floors) {
+    xMin = Math.min(xMin, b.min.x)
+    xMax = Math.max(xMax, b.max.x)
+    zMin = Math.min(zMin, b.min.z)
+    zMax = Math.max(zMax, b.max.z)
+  }
+  const cols = Math.ceil((xMax - xMin) / STEP) + 1
+  const rows = Math.ceil((zMax - zMin) / STEP) + 1
+
+  const onFloor = (x, z) => floors.some((b) => x >= b.min.x && x <= b.max.x && z >= b.min.z && z <= b.max.z)
+  const clear = (x, z) =>
+    !walls.some(
+      (b) =>
+        x > b.min.x - PLAYER_RADIUS &&
+        x < b.max.x + PLAYER_RADIUS &&
+        z > b.min.z - PLAYER_RADIUS &&
+        z < b.max.z + PLAYER_RADIUS
+    )
+
+  const walkable = new Uint8Array(cols * rows)
+  for (let j = 0; j < rows; j += 1) {
+    for (let i = 0; i < cols; i += 1) {
+      const x = xMin + i * STEP
+      const z = zMin + j * STEP
+      if (onFloor(x, z) && clear(x, z)) walkable[j * cols + i] = 1
+    }
+  }
+
+  const cafeteria = ROOM_LAYOUT.find((r) => r.id === 'cafeteria')
+  const start =
+    Math.round((cafeteria.center[2] - zMin) / STEP) * cols + Math.round((cafeteria.center[0] - xMin) / STEP)
+  assert.equal(walkable[start], 1, 'the spawn point itself is not walkable')
+
+  const seen = new Uint8Array(cols * rows)
+  const queue = [start]
+  seen[start] = 1
+  for (let head = 0; head < queue.length; head += 1) {
+    const cell = queue[head]
+    const ci = cell % cols
+    const cj = Math.floor(cell / cols)
+    for (const [ni, nj] of [
+      [ci + 1, cj],
+      [ci - 1, cj],
+      [ci, cj + 1],
+      [ci, cj - 1],
+    ]) {
+      if (ni < 0 || nj < 0 || ni >= cols || nj >= rows) continue
+      const next = nj * cols + ni
+      if (seen[next] || !walkable[next]) continue
+      seen[next] = 1
+      queue.push(next)
+    }
+  }
+
+  const unreachable = ROOM_LAYOUT.filter((room) => {
+    const i = Math.round((room.center[0] - xMin) / STEP)
+    const j = Math.round((room.center[2] - zMin) / STEP)
+    return !seen[j * cols + i]
+  }).map((room) => room.id)
+
+  assert.deepEqual(unreachable, [], `rooms walled off from the spawn: ${unreachable.join(', ')}`)
+})

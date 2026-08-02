@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "server": "node server/index.js"
+    "server": "node server/index.js",
+    "web": "node tools/serve.js",
+    "test": "node --test"
   },
   "dependencies": {
     "ws": "^8.21.1"
