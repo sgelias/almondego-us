@@ -10,7 +10,7 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 - **One uniform task type**: "hold the interact key for ~2 seconds while in range." Among Us has many distinct task minigames; building several bespoke minigames is a large lift with no art/asset budget, so v1 reuses the interact-prompt system from Milestone 1 with a hold-duration instead of an instant press.
 - **Majority-vote ejection, ties eject no one** (same as the real game's default rule) — simplest deterministic tally, no tie-breaker mechanic.
 - **Impostor disconnecting mid-match ends the game as a Crewmate win** — there's no impostor to reassign to, and re-running role assignment mid-match isn't in scope.
-- **A match needs at least 2 connected players to start** (so there's someone to be the Impostor and someone to be a Crewmate) — "Start Game" is blocked below that with a message.
+- **A match needs at least 3 connected players to start** (1 impostor + 2 crewmates, so the impostor doesn't already satisfy the parity-win condition at kickoff) — "Start Game" is blocked below that with a message.
 
 ## Goals
 
@@ -42,13 +42,13 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 
 **Acceptance Criteria**:
 
-1. WHEN the host starts the match with 2+ connected players THEN the server SHALL randomly assign exactly one player as Impostor and all others as Crewmate, and privately tell each client only their own role (never broadcast anyone else's role).
+1. WHEN the host starts the match with 3+ connected players THEN the server SHALL randomly assign exactly one player as Impostor and all others as Crewmate, and privately tell each client only their own role (never broadcast anyone else's role).
 2. WHEN a Crewmate's client receives its role THEN it SHALL show a personal task list of 3 tasks drawn from a fixed pool of task locations scattered around the map, each showing its completion state.
 3. WHEN a Crewmate holds the interact key within range of an assigned, incomplete task location for ~2 seconds THEN the system SHALL mark that task complete for that player and sync it to the server.
 4. WHEN a player interacts with a task location that isn't assigned to them, is already complete, or they aren't a Crewmate THEN nothing SHALL happen (no prompt, no effect, no error).
 5. WHEN every living Crewmate has completed all 3 of their assigned tasks THEN the server SHALL declare Crewmates the winner and broadcast the outcome to every client.
 
-**Independent Test**: Start a match with 2 clients; whichever becomes Crewmate completes all 3 tasks; confirm both clients see a "Crewmates win" screen.
+**Independent Test**: Start a match with 3 clients; whichever becomes Crewmate completes all 3 tasks; confirm both clients see a "Crewmates win" screen.
 
 ---
 
@@ -68,7 +68,7 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 6. WHEN the number of living Crewmates drops to 1 or fewer (with 1 living Impostor) THEN the server SHALL declare the Impostor the winner.
 7. WHEN a player is dead (killed or ejected) THEN their own client SHALL enter a spectator state — camera still free to move, but no longer visible to living players' clients, and no longer able to vote, interact, complete tasks, or be killed.
 
-**Independent Test**: With 3+ clients, have the Impostor kill a Crewmate, have another Crewmate report the body, run the meeting to a vote, eject the Impostor, and confirm all clients see "Crewmates win" with the Impostor's identity revealed.
+**Independent Test**: With **4+** clients (a kill in a 3-player match immediately triggers GAME-11's parity win before any meeting can happen — see AD/lesson in STATE.md), have the Impostor kill a Crewmate, have another Crewmate report the body, run the meeting to a vote, eject the Impostor, and confirm all clients see "Crewmates win" with the Impostor's identity revealed.
 
 ---
 
@@ -91,7 +91,7 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 - WHEN the Impostor disconnects mid-match THEN the server SHALL immediately declare Crewmates the winner (per the scope-narrowing assumption above).
 - WHEN a Crewmate disconnects mid-match THEN the server SHALL remove them (existing NET-13 behavior) and re-check win conditions immediately afterward (their disconnect could trigger Impostor parity win).
 - WHEN a new meeting or kill is attempted while a meeting or game-over state is already active THEN the server SHALL ignore it.
-- WHEN "Start Game" is clicked with fewer than 2 connected players THEN the client SHALL show a message instead of starting.
+- WHEN "Start Game" is clicked with fewer than 3 connected players THEN the client SHALL show a message instead of starting.
 - WHEN a dead player's client tries to send a task/kill/vote/report message THEN the server SHALL ignore it (dead players have no valid actions).
 
 ---
@@ -114,7 +114,7 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 | GAME-12 | P2: Dead player enters spectator state | Design | Pending |
 | GAME-13 | P3: Impostor-only vent teleport | Design | Pending |
 | GAME-14 | Edge: Impostor disconnect ends game (Crewmate win) | Design | Pending |
-| GAME-15 | Edge: min 2 players to start | Design | Pending |
+| GAME-15 | Edge: min 3 players to start (1 impostor stays outnumbered from the start) | Design | Pending |
 
 **Coverage:** 15 total, 0 mapped to tasks, 15 unmapped ⚠️
 

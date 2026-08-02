@@ -215,7 +215,7 @@ graph TD
 | `callMeeting`/`kill` while `phase !== 'playing'` | Server checks `match.phase`, ignores | No effect (prevents double meetings) |
 | `vote` for an unknown/dead target id | Server validates target is `'skip'` or a currently-alive id, ignores otherwise | Vote not counted |
 | Impostor disconnects mid-match | `close` handler checks if the leaving id is the Impostor, immediately ends the match as a Crewmate win | All clients see `gameOver` |
-| "Start Game" with < 2 players | Client-side check before sending `start` (server also validates and sends an `error`) | Lobby shows a message instead of starting |
+| "Start Game" with < 3 players | Client-side check before sending `start` (server also validates and sends an `error`) | Lobby shows a message instead of starting |
 
 ---
 

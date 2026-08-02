@@ -81,6 +81,11 @@ test('checkWinCondition returns null mid-game', () => {
   assert.equal(checkWinCondition(match), null)
 })
 
+test('with only 2 players, checkWinCondition is impostor-favored from the start (documents why the server requires 3+ to start)', () => {
+  const match = createMatch(['a', 'b'], alwaysZero) // 1 impostor + 1 crewmate: living crew (1) <= living impostors (1)
+  assert.equal(checkWinCondition(match), 'impostor')
+})
+
 test('checkWinCondition returns crew once every crewmate finishes all tasks', () => {
   const match = createMatch(['a', 'b'], alwaysZero)
   const crewId = getRole(match, 'a') === 'impostor' ? 'b' : 'a'

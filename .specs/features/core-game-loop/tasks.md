@@ -131,7 +131,7 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] Role assignment is always exactly 1 impostor for any player count ≥ 2 (tested with a seeded/injectable `randomFn` for determinism)
+- [ ] Role assignment is always exactly 1 impostor for any player count ≥ 3 (tested with a seeded/injectable `randomFn` for determinism, and a documented regression test for the 2-player degenerate case)
 - [ ] Task assignment gives each crewmate exactly 3 distinct ids from the 5-entry pool
 - [ ] Win-condition edge cases (all-tasks-done, parity, neither) all covered
 - [ ] Vote tally handles majority/tie/skip-majority correctly
@@ -312,7 +312,7 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 
 ### T12: Wire server/index.js for the full game loop
 
-**What**: On `start` (with ≥2 players, else reply with an `error`), call `gameState.createMatch` and privately send each player their `role` message. Add handlers: `taskComplete` (validate alive+crewmate+assigned+incomplete, call `completeTask`, broadcast `tasksProgress`, check win → `gameOver` if done); `kill` (validate sender is alive Impostor and target is alive, `recordDeath`, broadcast `playerDied`, check win); `callMeeting` (validate `phase === 'playing'` and sender alive, `startMeeting`, broadcast `meetingStarted` with living roster, start a discussion `setTimeout` then a voting `setTimeout`); `vote` (validate alive + voting phase + valid target, `castVote`); on the voting timer (or once every living player has voted) call `tallyVotes`, `recordDeath` if ejected, broadcast `meetingResult`, check win, `endMeeting`; `vent` (validate alive Impostor, look up `getVentDestination`, reply `teleport` to sender only). Gate the existing `state` relay on `gameState.isAlive`. On `close`, if the disconnecting id is the Impostor mid-match, immediately broadcast `gameOver` with `winner: 'crew'`.
+**What**: On `start` (with ≥3 players, else reply with an `error`), call `gameState.createMatch` and privately send each player their `role` message. Add handlers: `taskComplete` (validate alive+crewmate+assigned+incomplete, call `completeTask`, broadcast `tasksProgress`, check win → `gameOver` if done); `kill` (validate sender is alive Impostor and target is alive, `recordDeath`, broadcast `playerDied`, check win); `callMeeting` (validate `phase === 'playing'` and sender alive, `startMeeting`, broadcast `meetingStarted` with living roster, start a discussion `setTimeout` then a voting `setTimeout`); `vote` (validate alive + voting phase + valid target, `castVote`); on the voting timer (or once every living player has voted) call `tallyVotes`, `recordDeath` if ejected, broadcast `meetingResult`, check win, `endMeeting`; `vent` (validate alive Impostor, look up `getVentDestination`, reply `teleport` to sender only). Gate the existing `state` relay on `gameState.isAlive`. On `close`, if the disconnecting id is the Impostor mid-match, immediately broadcast `gameOver` with `winner: 'crew'`.
 **Where**: `server/index.js` (modify)
 **Depends on**: T2, T3, T4
 **Reuses**: `server/gameState.js`, `shared/ventPool.js`, existing broadcast helpers
