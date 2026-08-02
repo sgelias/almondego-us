@@ -25,7 +25,7 @@ que serviu a página, e quem entrar primeiro vira o anfitrião — é quem vê o
 botão **Iniciar Partida**.
 
 ```bash
-npm test     # 113 testes
+npm test     # 152 testes
 npm run server  # só o servidor de partida
 npm run web     # só o servidor do cliente
 ```
@@ -40,7 +40,9 @@ npm run web     # só o servidor do cliente
 | `E` | Interagir: tarefa, duto, botão de emergência, atacar |
 | `Q` | Usar sua magia (tripulantes) |
 | `Tab` | Abrir o mapa |
-| `Esc` | Sair de uma tarefa |
+| `Esc` | Sair de uma tarefa / pausar |
+| `M` | Silenciar a música |
+| `−` `+` | Abaixar / aumentar a música |
 
 ## Como se joga
 
@@ -93,6 +95,17 @@ descobre uma morte. Discussão, votação por retrato, e o mais votado é ejetad
 
 A tripulação vence completando todas as tarefas ou ejetando todos os impostores.
 Os impostores vencem quando restam tantos deles quanto tripulantes.
+
+## Música
+
+O jogo toca uma trilha de fundo, baixinho, com o que estiver em `assets/`
+(`.mp3`, `.ogg`, `.m4a`, `.wav`) — sorteada e encadeada durante a partida, e
+abaixada durante reuniões e tarefas. A pasta **não vai no repositório**: são
+arquivos grandes e de terceiros. Coloque os seus e o jogo os encontra sozinho;
+com a pasta vazia, ele simplesmente fica sem música.
+
+O volume fica em `M` e `−`/`+` durante o jogo, e num controle deslizante na
+tela de pausa (`Esc`). A escolha é lembrada entre partidas.
 
 ## Como está organizado
 

@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, stat, readdir } from 'node:fs/promises'
 import { extname, join, normalize, resolve } from 'node:path'
 import { getLanAddress } from '../server/lanAddress.js'
 
@@ -24,6 +24,10 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.wav': 'audio/wav',
 }
 
 function safePath(urlPath) {
@@ -50,6 +54,26 @@ createServer(async (request, response) => {
     return
   }
 
+  // The music is whatever happens to be in assets/. Listing it here rather
+  // than hardcoding filenames means dropping a track in or taking one out
+  // needs no code change - and an absent folder simply yields an empty list,
+  // so the game is silent instead of broken.
+  if (request.url.split('?')[0] === '/music-list') {
+    let tracks = []
+    try {
+      const entries = await readdir(join(ROOT, 'assets'))
+      tracks = entries.filter((name) => /\.(mp3|ogg|m4a|wav)$/i.test(name)).sort()
+    } catch {
+      tracks = []
+    }
+    response.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    })
+    response.end(JSON.stringify({ tracks }))
+    return
+  }
+
   let filePath = safePath(request.url === '/' ? '/index.html' : request.url)
   if (!filePath) {
     response.writeHead(403).end('Forbidden')
@@ -60,12 +84,16 @@ createServer(async (request, response) => {
     const info = await stat(filePath)
     if (info.isDirectory()) filePath = join(filePath, 'index.html')
     const body = await readFile(filePath)
+    const extension = extname(filePath).toLowerCase()
+    // no-store exists for the ES modules, so a reload never mixes old and
+    // new code, and it stays that way for everything editable. Music is the
+    // one exception: megabytes that never change, re-downloaded on every
+    // reload for no benefit.
+    const isMedia = ['.mp3', '.ogg', '.m4a', '.wav'].includes(extension)
     response.writeHead(200, {
-      'Content-Type': MIME[extname(filePath)] ?? 'application/octet-stream',
-      // The whole point of this file.
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-      Pragma: 'no-cache',
-      Expires: '0',
+      'Content-Type': MIME[extension] ?? 'application/octet-stream',
+      'Cache-Control': isMedia ? 'public, max-age=86400' : 'no-store, no-cache, must-revalidate',
+      ...(isMedia ? {} : { Pragma: 'no-cache', Expires: '0' }),
     })
     response.end(body)
   } catch {

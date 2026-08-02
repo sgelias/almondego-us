@@ -28,6 +28,8 @@ import { createMeetingUI } from './game/meetingUI.js'
 import { showGameOver } from './game/gameOverScreen.js'
 import { createVentTransition } from './ui/ventTransition.js'
 import { createSfx } from './audio/sfx.js'
+import { createMusic } from './audio/music.js'
+import { createMusicControls } from './ui/musicControls.js'
 import { createMinimap } from './ui/minimap.js'
 import { createToast } from './ui/toast.js'
 import { CORRIDOR_WIDTH } from '../shared/skeldCorridors.js'
@@ -90,6 +92,16 @@ scene.add(mapGroup)
 mapGroup.updateMatrixWorld(true)
 const worldOctree = buildWorldOctree(collisionGroup)
 const sfx = createSfx()
+
+// Background music from assets/. Independent of the synthesised sfx: it is a
+// plain <audio> element, so it works even if the AudioContext never unlocks,
+// and it is silent-but-harmless when the folder is empty.
+const music = createMusic({
+  audio: new Audio(),
+  fetchTracks: () => fetch('music-list').then((response) => response.json()).then((data) => data.tracks ?? []),
+})
+music.load()
+const musicControls = createMusicControls(music)
 
 // Audio unlock. The pointer-lock overlay's click was the only trigger before
 // and the user reported no sound at all, so this no longer depends on one
@@ -217,7 +229,11 @@ function setBusy(reason, active) {
   if (active) busyReasons.add(reason)
   else busyReasons.delete(reason)
   const isBusy = busyReasons.size > 0
-  if (isBusy !== wasBusy) netClient?.send(MESSAGE_TYPE.BUSY, { busy: isBusy })
+  if (isBusy === wasBusy) return
+  netClient?.send(MESSAGE_TYPE.BUSY, { busy: isBusy })
+  // Duck rather than stop: a meeting or a quiz should not restart the track
+  // from the beginning when it ends.
+  music.setDucked(isBusy)
 }
 // taskId -> timestamp before which that console refuses to reopen, the cost
 // of a wrong answer (AD-008).
@@ -393,6 +409,7 @@ function handleInteractPress() {
 }
 
 document.addEventListener('keydown', (event) => {
+  if (musicControls.handleKey(event)) return
   if (event.code === 'KeyQ' && !event.repeat) {
     castSpell()
     return
@@ -463,6 +480,9 @@ function connect(url, name, lobby) {
   })
 
   netClient.on(MESSAGE_TYPE.ROLE, (msg) => {
+    // The match has actually begun - this is where the soundtrack belongs,
+    // not the lobby.
+    music.start()
     localRole = msg.role
     localMaxHealth = msg.maxHealth ?? 3
     remotePlayers.resetHealth()
@@ -641,6 +661,7 @@ function connect(url, name, lobby) {
 
   netClient.on(MESSAGE_TYPE.GAME_OVER, (msg) => {
     gameEnded = true
+    music.stop()
     interactionsPaused = true
     setBusy('gameover', true)
     player.setFrozen(true)
@@ -718,6 +739,7 @@ function resetForNewMatch() {
   pendingPanelIds.clear()
   roleUI.reset()
   busyReasons.clear()
+  music.setDucked(false)
   netClient?.send(MESSAGE_TYPE.BUSY, { busy: false })
   gameOverScreen?.remove()
   gameOverScreen = null
@@ -734,6 +756,10 @@ function startGame(lobby) {
   lobby.hide()
   const pointerLock = initPointerLockOverlay(canvas)
   pointerLock.onActivate(unlockAudio)
+  // The pause screen is the only place a mouse-driven volume slider is
+  // usable: for the rest of the match the pointer is locked to the canvas.
+  pointerLock.addToPauseScreen(musicControls.panel)
+  pointerLock.addToPauseScreen(musicControls.hint)
 
   document.addEventListener('keydown', (event) => player.handleKeyDown(event))
   document.addEventListener('keyup', (event) => player.handleKeyUp(event))
