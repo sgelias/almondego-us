@@ -77,12 +77,7 @@ export function createMeetingUI({ onVote }) {
       title.style.textAlign = 'center'
       overlay.appendChild(title)
 
-      const hint = document.createElement('div')
-      hint.textContent = 'Discussão — a votação começa em instantes'
-      hint.style.color = COLORS.muted
-      overlay.appendChild(hint)
-
-      overlay.appendChild(createCountdownBar(seconds))
+      overlay.appendChild(createCountdownBar(seconds, 'A votação começa em'))
 
       const grid = cardGrid()
       for (const player of livingPlayers) {
@@ -123,7 +118,7 @@ export function createMeetingUI({ onVote }) {
         overlay.appendChild(notice)
       }
 
-      overlay.appendChild(createCountdownBar(seconds))
+      overlay.appendChild(createCountdownBar(seconds, 'Votação termina em'))
 
       const grid = cardGrid()
       overlay.appendChild(grid)

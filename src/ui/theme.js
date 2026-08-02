@@ -106,27 +106,69 @@ export function sectionLabel(el) {
   el.style.fontWeight = '700'
 }
 
-// A shrinking bar for the meeting/voting countdowns - far easier to read at
-// a glance than a number ticking down.
-export function createCountdownBar(seconds) {
+// A shrinking bar plus a numeric readout for the meeting/voting countdowns.
+//
+// The bar is driven by element.animate() rather than a CSS transition. The
+// transition version silently did nothing: the element is created detached,
+// gets width:100%, is appended, and then a requestAnimationFrame sets it to
+// 0% - but the browser may not have computed the initial width by then, so
+// it collapses both into one style change and there is nothing to animate
+// between. The Web Animations API takes explicit keyframes and does not
+// depend on that timing at all.
+//
+// The number is not redundant: it is the readable fallback if the animation
+// is ever suppressed (reduced-motion settings, background tab throttling),
+// and "23s" is more actionable than a bar length when you are deciding
+// whether there is time to finish reading a question.
+export function createCountdownBar(seconds, caption = '') {
   const wrap = document.createElement('div')
+  wrap.style.display = 'flex'
+  wrap.style.flexDirection = 'column'
+  wrap.style.alignItems = 'center'
+  wrap.style.gap = '0.35rem'
   wrap.style.width = 'min(26rem, 80vw)'
-  wrap.style.height = '8px'
-  wrap.style.borderRadius = '99px'
-  wrap.style.background = 'rgba(255,255,255,0.12)'
-  wrap.style.overflow = 'hidden'
+
+  const readout = document.createElement('div')
+  readout.style.color = COLORS.muted
+  readout.style.fontSize = '0.85rem'
+  readout.style.fontVariantNumeric = 'tabular-nums'
+  wrap.appendChild(readout)
+
+  const track = document.createElement('div')
+  track.style.width = '100%'
+  track.style.height = '8px'
+  track.style.borderRadius = '99px'
+  track.style.background = 'rgba(255,255,255,0.12)'
+  track.style.overflow = 'hidden'
+  wrap.appendChild(track)
 
   const fill = document.createElement('div')
   fill.style.height = '100%'
   fill.style.width = '100%'
   fill.style.background = `linear-gradient(90deg, ${COLORS.accent}, #3aa0ff)`
-  fill.style.transition = `width ${seconds}s linear`
-  wrap.appendChild(fill)
+  track.appendChild(fill)
 
-  // Next frame, so the browser has a starting width to animate away from.
-  requestAnimationFrame(() => {
-    fill.style.width = '0%'
+  // Optional chaining so the numeric readout really is a fallback rather
+  // than being taken down with the animation if animate() is unavailable.
+  fill.animate?.([{ width: '100%' }, { width: '0%' }], {
+    duration: Math.max(0, seconds) * 1000,
+    easing: 'linear',
+    fill: 'forwards',
   })
+
+  let remaining = Math.max(0, Math.round(seconds))
+  const render = () => {
+    readout.textContent = caption ? `${caption} ${Math.max(0, remaining)}s` : `${Math.max(0, remaining)}s`
+  }
+  render()
+  const ticker = setInterval(() => {
+    remaining -= 1
+    render()
+    // Stop once it hits zero, and stop if the bar has been removed from the
+    // page - otherwise every meeting leaks an interval that lives until the
+    // tab closes.
+    if (remaining <= 0 || !wrap.isConnected) clearInterval(ticker)
+  }, 1000)
 
   return wrap
 }
