@@ -1,7 +1,7 @@
 # State
 
 **Last Updated:** 2026-08-01
-**Current Work:** Milestone 1, feature `first-person-movement` — all 9 tasks (T1-T9) code-complete and committed. Unit/build gate green (`node --test`, 10/10 passing). Blocked only on a human manual playtest (T9's second Done-when box) before the feature can be marked Verified — see tasks.md status note.
+**Current Work:** Milestone 1 (First-Person Movement Core) is COMPLETE — user confirmed the manual playtest passed on 2026-08-01 (all WASD/mouselook/sprint/head-bob/pointer-lock/interact-prompt/resize checks worked, no clipping or distortion reported). Next up: design Milestone 2 (Local Multiplayer Foundation).
 
 ---
 
@@ -82,9 +82,8 @@ None yet — captured in PROJECT.md "Explicitly out of scope" instead (multiple 
 
 ## Todos
 
-- [ ] Get user's manual playtest of `first-person-movement` (T9's second Done-when box) — server running at `http://localhost:8843/` via `python3 -m http.server 8843` from the project root (background process still running — stop it when done testing)
-- [ ] On playtest pass: mark T9 fully done in tasks.md, flip spec.md's FPM-01..FPM-10 statuses to Verified, update ROADMAP.md's "3D Map & Rendering" / "First-Person Controller" features to COMPLETE
-- [ ] Design phase likely needed before Milestone 2 (networking architecture: message protocol, authoritative state, reconciliation)
+- [ ] Stop the local dev server (`python3 -m http.server 8843`, still running in the background) once no longer needed for ad-hoc testing
+- [ ] Design phase for Milestone 2 (networking architecture: message protocol, authoritative state, reconciliation) — apply the AD-005 extensibility lens (playerController's state is already isolated behind clean function returns, per design.md's Extensibility Considerations, so this should wire in rather than require rewriting Milestone 1 code)
 
 ---
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current Milestone:** First-Person Movement Core
+**Current Milestone:** Local Multiplayer Foundation
 **Status:** Planning
 
 ---
@@ -9,15 +9,16 @@
 
 **Goal:** A single player can walk around a 3D spaceship map in first person, with mouselook and wall/object collision — the "Doom feel" is proven before any networking or game rules are added.
 **Target:** Playable local build, no multiplayer yet.
+**Status:** ✅ COMPLETE (2026-08-01) — see `.specs/features/first-person-movement/`
 
 ### Features
 
-**3D Map & Rendering** - PLANNED
+**3D Map & Rendering** - COMPLETE
 
 - Three.js scene with a spaceship-like map (rooms + corridors)
 - Basic lighting, primitive/low-poly geometry (no custom art assets needed)
 
-**First-Person Controller** - PLANNED
+**First-Person Controller** - COMPLETE
 
 - WASD movement + mouselook (pointer lock)
 - Collision detection against walls/obstacles

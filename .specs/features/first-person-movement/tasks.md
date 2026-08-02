@@ -1,7 +1,7 @@
 # First-Person Movement Tasks
 
 **Design**: `.specs/features/first-person-movement/design.md`
-**Status**: In Progress — T1-T8 code complete and gate-passed; T9 code complete, awaiting manual playtest
+**Status**: Done — all 9 tasks complete, gate green, manual playtest confirmed by user (2026-08-01)
 
 ---
 
@@ -251,10 +251,10 @@ T1, T5, T6, T7, T8 ──→ T9  (main.js wiring + full manual playtest)
 
 **Done when**:
 - [x] `node --test` passes (all unit tests from T2, T3 still green)
-- [ ] Manual playtest (per spec.md Independent Tests): pointer lock engages on click; player walks through at least two rooms and a corridor with no clipping; sprint and head-bob are visibly distinct from base walk; diagonal movement isn't faster than cardinal; Esc shows the resume overlay; interact prompt appears near the placeholder interactable; window resize doesn't distort the view
-- [ ] All of spec.md's Success Criteria checked off
+- [x] Manual playtest (per spec.md Independent Tests): pointer lock engages on click; player walks through at least two rooms and a corridor with no clipping; sprint and head-bob are visibly distinct from base walk; diagonal movement isn't faster than cardinal; Esc shows the resume overlay; interact prompt appears near the placeholder interactable; window resize doesn't distort the view
+- [x] All of spec.md's Success Criteria checked off
 
-**Status note (2026-08-01):** Code complete. A self-review (see STATE.md L-001, L-002) caught and fixed two blocking bugs before any playtest: whole cardinal walls were being removed instead of door-sized gaps (player could fall out of the map), and the movement-speed constant was tuned for the wrong physical quantity (~1.25 u/s instead of ~5 u/s). Both are fixed and re-verified with the pure-math sanity check and unit gate, but neither the agent nor an automated tool has actually rendered this in a browser — the checkbox above stays unchecked until a human confirms it in-browser.
+**Status note (2026-08-01):** Code complete, gate green, and confirmed working by the user's manual playtest — all controls worked, no clipping/distortion reported. Milestone 1 vertical slice is DONE.
 
 **Tests**: none (bootstrap/integration — verified via full manual playtest, no dedicated test file)
 **Gate**: build — `node --test` + full manual playthrough per spec.md Success Criteria

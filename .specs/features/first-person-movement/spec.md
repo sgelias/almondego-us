@@ -80,25 +80,25 @@ The whole premise of the project is Among Us reimagined as a first-person, Doom-
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| FPM-01 | P1: Map rendering (Three.js, rooms + corridors, lighting) | Tasks: T1, T4 | Implementing |
-| FPM-02 | P1: WASD movement relative to view direction | Tasks: T6 | Implementing |
-| FPM-03 | P1: Mouselook via pointer lock, pitch clamped | Tasks: T3, T6 | Implementing |
-| FPM-04 | P1: Wall/object collision with sliding | Tasks: T5, T6 | Implementing |
-| FPM-05 | P2: Sprint speed multiplier | Tasks: T6 | Implementing |
-| FPM-06 | P2: Head-bob effect | Tasks: T6 | Implementing |
-| FPM-07 | P3: Interact prompt/crosshair on look-at | Tasks: T4, T8 | Implementing |
-| FPM-08 | Edge: pointer lock loss overlay | Tasks: T7 | Implementing |
-| FPM-09 | Edge: diagonal movement normalization | Tasks: T3, T6 | Implementing |
-| FPM-10 | Edge: window resize handling | Tasks: T9 | Implementing |
+| FPM-01 | P1: Map rendering (Three.js, rooms + corridors, lighting) | Tasks: T1, T4 | Verified |
+| FPM-02 | P1: WASD movement relative to view direction | Tasks: T6 | Verified |
+| FPM-03 | P1: Mouselook via pointer lock, pitch clamped | Tasks: T3, T6 | Verified |
+| FPM-04 | P1: Wall/object collision with sliding | Tasks: T5, T6 | Verified |
+| FPM-05 | P2: Sprint speed multiplier | Tasks: T6 | Verified |
+| FPM-06 | P2: Head-bob effect | Tasks: T6 | Verified |
+| FPM-07 | P3: Interact prompt/crosshair on look-at | Tasks: T4, T8 | Verified |
+| FPM-08 | Edge: pointer lock loss overlay | Tasks: T7 | Verified |
+| FPM-09 | Edge: diagonal movement normalization | Tasks: T3, T6 | Verified |
+| FPM-10 | Edge: window resize handling | Tasks: T9 | Verified |
 
 **Coverage:** 10 total, 10 mapped to tasks, 0 unmapped
 
-**Note:** "Implementing" means the code is written and the unit-test/build gate is green (see TESTING.md). It moves to "Verified" only after the manual playtest in T9 (rendering/collision/feel can't be automated per this project's testing convention) — see STATE.md for current status.
+**Verified on:** 2026-08-01, via user manual playtest (rendering/collision/feel can't be automated per this project's testing convention — see TESTING.md).
 
 ---
 
 ## Success Criteria
 
-- [ ] Player can walk through the full map (all rooms + corridors) with no visual clipping through walls
-- [ ] Pointer lock mouselook works smoothly with no camera flip at extreme pitch
-- [ ] Sprint and head-bob are visibly distinct from base walking
+- [x] Player can walk through the full map (all rooms + corridors) with no visual clipping through walls
+- [x] Pointer lock mouselook works smoothly with no camera flip at extreme pitch
+- [x] Sprint and head-bob are visibly distinct from base walking
