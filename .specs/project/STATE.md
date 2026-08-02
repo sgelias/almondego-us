@@ -82,7 +82,7 @@ None yet — captured in PROJECT.md "Explicitly out of scope" instead (multiple 
 
 ## Todos
 
-- [ ] Stop the local dev server (`python3 -m http.server 8843`, still running in the background) once no longer needed for ad-hoc testing
+- [ ] Specify Milestone 2 feature ("local-multiplayer") — in progress
 - [ ] Design phase for Milestone 2 (networking architecture: message protocol, authoritative state, reconciliation) — apply the AD-005 extensibility lens (playerController's state is already isolated behind clean function returns, per design.md's Extensibility Considerations, so this should wire in rather than require rewriting Milestone 1 code)
 
 ---
