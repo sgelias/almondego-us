@@ -1,7 +1,7 @@
 # State
 
 **Last Updated:** 2026-08-01
-**Current Work:** Milestone 1 (First-Person Movement Core) is COMPLETE — user confirmed the manual playtest passed on 2026-08-01 (all WASD/mouselook/sprint/head-bob/pointer-lock/interact-prompt/resize checks worked, no clipping or distortion reported). Next up: design Milestone 2 (Local Multiplayer Foundation).
+**Current Work:** Milestone 1 (First-Person Movement Core) is COMPLETE. Milestone 2 (Local Multiplayer Foundation, feature `local-multiplayer`) is code-complete (T1-T7) — the protocol/server/client layer is verified end-to-end via real WebSocket connections (a throwaway script, not the browser), but nothing DOM/Three.js-facing (lobby UI, remote avatar rendering) has run in an actual browser yet. Blocked only on a human two-browser-window playtest — see tasks.md status note.
 
 ---
 
@@ -66,6 +66,26 @@ None. (T9's manual playtest is tracked as an open Done-when item in tasks.md, no
 **Solution:** Replaced whole-wall removal with per-connection door-sized gaps, positioned by the exact point where the corridor line crosses the room's boundary (`computeEdge`, shared by both the wall-gap logic and the corridor-placement logic, so they can't drift out of sync). Also restored the `games_fps.html` out-of-bounds respawn as a safety net for whatever this approach still misses.
 **Prevents:** When room/corridor placement isn't grid-aligned, "which whole side is open" is the wrong question — the right question is "where exactly does the connecting geometry touch this room's boundary." Any future map work (Milestone 3 room additions, a second map) should reuse `computeEdge` rather than re-deriving a cardinal-side approximation.
 
+### L-003: The network "position" and the render mesh's origin need the same reference point (2026-08-01)
+
+**Context:** `main.js` broadcasts `camera.position` (the local player's eye height, sitting at the top of their capsule) as each player's networked "position". `remotePlayers.js` drew the remote capsule mesh directly at that y-coordinate.
+**Problem:** `CapsuleGeometry` is centered on its own origin, so "eye position" and "capsule center" are two different points ~0.5 units apart. Every remote player rendered floating half a unit above the floor. Nothing in the unit tests or `node --check` could catch this — it's a semantic mismatch between what one module sends and what another assumes, only visible by actually looking at the rendered scene.
+**Solution:** `remotePlayers.js` now subtracts a documented `EYE_TO_CENTER_OFFSET` constant before placing/lerping the mesh, converting the network's "eye position" into the visual "capsule center" it actually needs.
+**Prevents:** When one module's output becomes another's input across a network boundary, write down (in a comment or the design doc) exactly *what point on the body* a position number represents — "position" alone is ambiguous between eye, feet, and center, and the mismatch is invisible until rendered.
+
+### L-004: Removing a parent from the scene does not cascade cleanup to `CSS2DObject` children (2026-08-01)
+
+**Context:** `remotePlayers.remove(id)` needed to fully clean up a disconnected player's capsule mesh and its `CSS2DObject` name-tag label (added as a child of the mesh).
+**Problem:** The first version only called `scene.remove(entry.mesh)` and disposed the mesh's geometry — never touching the label. `CSS2DObject` relies on a `'removed'` event fired when *it itself* is detached from its direct parent; removing an ancestor further up the tree doesn't propagate that event down to it. The result: the mesh disappeared correctly, but the player's name text stayed frozen on screen at its last position forever.
+**Solution:** Store the label reference on the tracked entry and explicitly detach it (`entry.mesh.remove(entry.label)`) plus remove its DOM element directly, rather than relying on cleanup cascading from an ancestor removal.
+**Prevents:** Whenever a Three.js object owns a `CSS2DObject`/other DOM-backed child, cleanup code must reach that specific child directly — removing an ancestor is not equivalent to removing it, even though both leave the scene graph looking correct.
+
+### L-005: Any user-triggered async action needs a re-entrancy guard, even a "just wire it up" one (2026-08-01)
+
+**Context:** `main.js`'s `connect()` (fired by clicking a lobby button) and `startGame()` (fired by a network `start` message) both had side effects — opening a socket, adding `requestAnimationFrame`/input listeners — that are wrong to run twice.
+**Problem:** Neither had a guard. A double-click on "Host & Join" (there's no "connecting…" loading state yet) would have opened a second socket and sent a second `join`, leaving a phantom entry in everyone's roster forever. A duplicate `start` broadcast (a narrow race that widens with LAN latency) would have started a second `animate()` loop stacked on the first — doubling movement speed and mouse sensitivity, not just doubling CPU work.
+**Prevents:** Any handler wired to a UI click or an incoming network message that has non-idempotent side effects (opening a connection, starting a loop, attaching listeners) needs an explicit "already in progress/already done" guard — "the user won't do that" and "the message won't arrive twice" are both assumptions worth guarding against for free.
+
 ---
 
 ## Quick Tasks Completed
@@ -82,8 +102,9 @@ None yet — captured in PROJECT.md "Explicitly out of scope" instead (multiple 
 
 ## Todos
 
-- [ ] Specify Milestone 2 feature ("local-multiplayer") — in progress
-- [ ] Design phase for Milestone 2 (networking architecture: message protocol, authoritative state, reconciliation) — apply the AD-005 extensibility lens (playerController's state is already isolated behind clean function returns, per design.md's Extensibility Considerations, so this should wire in rather than require rewriting Milestone 1 code)
+- [ ] Get user's manual two-browser-window playtest of `local-multiplayer` (T7's second Done-when box). Needs TWO processes: terminal 1 `npm run server` (logs the LAN address, default port 8080), terminal 2 a static file server from the project root (e.g. `python3 -m http.server 8843`) for the client. Window A: "Host & Join". Window B: type `localhost:8080` (same machine) or the LAN address terminal 1 printed (different machine) into the join field.
+- [ ] On playtest pass: mark T7 fully done in tasks.md, flip spec.md's NET-04..NET-13 statuses to Verified, update ROADMAP.md's Milestone 2 features to COMPLETE
+- [ ] Design phase for Milestone 3 (Core Game Loop: roles, tasks, impostor kill/vent, meetings/voting, win/loss) — the shared relay server and protocol from Milestone 2 should extend with new message types rather than needing a new transport layer
 
 ---
 

@@ -1,7 +1,7 @@
 # Local Multiplayer Foundation Tasks
 
 **Design**: `.specs/features/local-multiplayer/design.md`
-**Status**: Draft
+**Status**: In Progress — T1-T6 code complete and gate-passed; T7 code complete (protocol layer verified via a real two-connection smoke test against the running server), awaiting a human two-browser-window manual playtest
 
 ---
 
@@ -46,10 +46,10 @@ T3, T4, T5, T6 ──→ T7  (main.js wiring: lobby → connect → play)
 - Skill: NONE
 
 **Done when**:
-- [ ] All 7 message types are defined and unique
-- [ ] `isKnownMessageType` returns true for every `MESSAGE_TYPE` value and false for an arbitrary string
-- [ ] Gate check passes: `node --test 'shared/**/*.test.js'`
-- [ ] Test count: at least 2 tests pass
+- [x] All 7 message types are defined and unique
+- [x] `isKnownMessageType` returns true for every `MESSAGE_TYPE` value and false for an arbitrary string
+- [x] Gate check passes: `node --test 'shared/**/*.test.js'`
+- [x] Test count: at least 2 tests pass
 
 **Tests**: unit
 **Gate**: quick
@@ -71,9 +71,9 @@ T3, T4, T5, T6 ──→ T7  (main.js wiring: lobby → connect → play)
 - Skill: NONE
 
 **Done when**:
-- [ ] `npm install` completes with no errors
-- [ ] `node -e "import('ws').then(() => console.log('ok'))"` prints `ok`
-- [ ] `node_modules/` is git-ignored
+- [x] `npm install` completes with no errors
+- [x] `node -e "import('ws').then(() => console.log('ok'))"` prints `ok`
+- [x] `node_modules/` is git-ignored
 
 **Tests**: none (config-only)
 **Gate**: none
@@ -95,11 +95,11 @@ T3, T4, T5, T6 ──→ T7  (main.js wiring: lobby → connect → play)
 - Skill: NONE
 
 **Done when**:
-- [ ] `node server/index.js` starts without error and logs a `ws://<lan-ip>:<port>` line
-- [ ] Two `wscat`-style manual connections can join, see each other via `welcome`/`playerJoined`, and a `state` message from one is relayed to the other but not echoed back to the sender
-- [ ] A duplicate `join` name gets a numeric suffix in the roster
-- [ ] Only the first-connected client's `start` message triggers a broadcast `start`
-- [ ] Closing one connection triggers `playerLeft` to the remaining one
+- [x] `node server/index.js` starts without error and logs a `ws://<lan-ip>:<port>` line
+- [x] Two `wscat`-style manual connections can join, see each other via `welcome`/`playerJoined`, and a `state` message from one is relayed to the other but not echoed back to the sender
+- [x] A duplicate `join` name gets a numeric suffix in the roster
+- [x] Only the first-connected client's `start` message triggers a broadcast `start`
+- [x] Closing one connection triggers `playerLeft` to the remaining one
 
 **Tests**: none (per TESTING.md matrix — verified via manual multi-client playtest in T7)
 **Gate**: none
@@ -121,9 +121,9 @@ T3, T4, T5, T6 ──→ T7  (main.js wiring: lobby → connect → play)
 - Skill: NONE
 
 **Done when**:
-- [ ] `send(type, payload)` produces a JSON string matching the protocol shape
-- [ ] `on(type, handler)` only invokes `handler` for messages whose `type` matches
-- [ ] A connection failure surfaces through a dedicated callback/event rather than throwing unhandled
+- [x] `send(type, payload)` produces a JSON string matching the protocol shape
+- [x] `on(type, handler)` only invokes `handler` for messages whose `type` matches
+- [x] A connection failure surfaces through a dedicated callback/event rather than throwing unhandled
 
 **Tests**: none (per TESTING.md matrix — DOM/WebSocket-coupled, verified in T7's manual playtest)
 **Gate**: none
@@ -145,11 +145,11 @@ T3, T4, T5, T6 ──→ T7  (main.js wiring: lobby → connect → play)
 - Skill: NONE
 
 **Done when**:
-- [ ] Host-vs-join choice and name entry are all present and wired to their callbacks
-- [ ] `setPlayers([...])` updates the visible list without a page reload
-- [ ] `setIsHost(true)` reveals the Start Game button; `false` keeps it hidden
-- [ ] `showConnectionError(message)` displays the message somewhere visible
-- [ ] `hide()` removes the overlay entirely
+- [x] Host-vs-join choice and name entry are all present and wired to their callbacks
+- [x] `setPlayers([...])` updates the visible list without a page reload
+- [x] `setIsHost(true)` reveals the Start Game button; `false` keeps it hidden
+- [x] `showConnectionError(message)` displays the message somewhere visible
+- [x] `hide()` removes the overlay entirely
 
 **Tests**: none (per TESTING.md matrix)
 **Gate**: none
@@ -171,10 +171,10 @@ T3, T4, T5, T6 ──→ T7  (main.js wiring: lobby → connect → play)
 - Skill: NONE
 
 **Done when**:
-- [ ] `upsert` on an unseen id creates a capsule mesh + name label positioned correctly
-- [ ] `upsert` with a stale `seq` is a no-op
-- [ ] `update(deltaTime)` visibly interpolates rather than snapping between positions
-- [ ] `remove(id)` disposes geometry/label and the avatar disappears from the scene
+- [x] `upsert` on an unseen id creates a capsule mesh + name label positioned correctly
+- [x] `upsert` with a stale `seq` is a no-op
+- [x] `update(deltaTime)` visibly interpolates rather than snapping between positions
+- [x] `remove(id)` disposes geometry/label and the avatar disappears from the scene
 
 **Tests**: none (per TESTING.md matrix — Three.js-coupled, verified in T7's manual playtest)
 **Gate**: none
@@ -196,9 +196,11 @@ T3, T4, T5, T6 ──→ T7  (main.js wiring: lobby → connect → play)
 - Skill: NONE
 
 **Done when**:
-- [ ] `node --test` passes (protocol unit tests still green)
+- [x] `node --test` passes (protocol unit tests still green)
 - [ ] Manual playtest with `node server/index.js` running and 2 browser windows: both join the lobby, names appear on each other's list, host's Start Game moves both into the 3D scene, each sees the other's capsule+name move around, closing one window removes its avatar for the other
 - [ ] All of spec.md's Success Criteria checked off
+
+**Status note (2026-08-01):** Code complete. A self-review (see STATE.md L-003, L-004, L-005) caught and fixed three bugs before any browser playtest: remote avatars floated ~0.5 units above the floor (network position is the sender's eye height, not the capsule center), a disconnected player's name label was never removed from the DOM (only the mesh was disposed), and `connect()`/`startGame()` had no re-entrancy guard against a double-click or a duplicate `start` broadcast. The protocol layer (server relay + `net/client.js`) was verified end-to-end with real WebSocket connections via a throwaway script (join/host-designation/state-relay/start-gating/disconnect/connection-error all confirmed) — but nothing that touches the DOM, Three.js rendering, or the lobby UI has been exercised in an actual browser. The checkbox above stays unchecked until a human confirms it in two browser windows.
 
 **Tests**: none (bootstrap/integration — verified via full manual multi-client playtest)
 **Gate**: build — `node --test` + manual two-window playthrough per spec.md Success Criteria

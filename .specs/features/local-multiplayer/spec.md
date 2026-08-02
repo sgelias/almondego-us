@@ -88,21 +88,21 @@ Among Us is fundamentally a social game — Milestone 1 proved the first-person 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| NET-01 | P1: Server listens, logs LAN IP:port | Design | Pending |
-| NET-02 | P1: Player join assigns id, notifies others | Design | Pending |
-| NET-03 | P1: Client state broadcast/relay | Design | Pending |
-| NET-04 | P1: Remote player avatar render + interpolation | Design | Pending |
-| NET-05 | P1: Disconnect removes avatar for others | Design | Pending |
-| NET-06 | P2: Join screen (host vs. join-by-IP + name) | Design | Pending |
-| NET-07 | P2: Live lobby player list | Design | Pending |
-| NET-08 | P2: Duplicate name suffixing | Design | Pending |
-| NET-09 | P2: Host-triggered synchronized match start | Design | Pending |
-| NET-10 | P3: Connection-failure feedback | Design | Pending |
-| NET-11 | Edge: host-as-player parity | Design | Pending |
-| NET-12 | Edge: stale/out-of-order update discard | Design | Pending |
-| NET-13 | Edge: mid-match disconnect handling | Design | Pending |
+| NET-01 | P1: Server listens, logs LAN IP:port | Tasks: T3 | Verified (server-side, via smoke test) |
+| NET-02 | P1: Player join assigns id, notifies others | Tasks: T3, T4 | Verified (server+client, via smoke test) |
+| NET-03 | P1: Client state broadcast/relay | Tasks: T3, T4 | Verified (server+client, via smoke test) |
+| NET-04 | P1: Remote player avatar render + interpolation | Tasks: T6 | Implementing (rendering — needs browser playtest) |
+| NET-05 | P1: Disconnect removes avatar for others | Tasks: T3, T6 | Implementing (server relay verified; avatar removal needs browser playtest) |
+| NET-06 | P2: Join screen (host vs. join-by-IP + name) | Tasks: T5 | Implementing (needs browser playtest) |
+| NET-07 | P2: Live lobby player list | Tasks: T5, T7 | Implementing (needs browser playtest) |
+| NET-08 | P2: Duplicate name suffixing | Tasks: T3 | Verified (server-side, via smoke test) |
+| NET-09 | P2: Host-triggered synchronized match start | Tasks: T3, T7 | Implementing (server-side gating verified; UI transition needs browser playtest) |
+| NET-10 | P3: Connection-failure feedback | Tasks: T4, T5 | Implementing (client event verified; UI display needs browser playtest) |
+| NET-11 | Edge: host-as-player parity | Tasks: T3 | Verified (server-side, via smoke test) |
+| NET-12 | Edge: stale/out-of-order update discard | Tasks: T6 | Implementing (needs browser playtest) |
+| NET-13 | Edge: mid-match disconnect handling | Tasks: T3, T6 | Implementing (server relay verified; avatar removal needs browser playtest) |
 
-**Coverage:** 13 total, 0 mapped to tasks, 13 unmapped ⚠️
+**Coverage:** 13 total, 13 mapped to tasks, 0 unmapped
 
 ---
 

@@ -95,7 +95,7 @@ Render loop addition: each frame, `main.js` now also (a) sends the local player'
 - **Location**: `src/net/client.js`
 - **Interfaces**:
   - `createNetClient(url: string): NetClient`
-  - `NetClient.on(type: string, handler: (payload) => void): void`
+  - `NetClient.on(type: string, handler: (payload) => void): void` — also accepts the internal `CONNECTED`/`CONNECTION_ERROR` event constants exported alongside, so callers know when it's safe to send `JOIN` and when to show a connection-failure message
   - `NetClient.send(type: string, payload: object): void`
   - `NetClient.close(): void`
 - **Dependencies**: browser `WebSocket`, `shared/protocol.js`
