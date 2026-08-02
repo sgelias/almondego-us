@@ -17,8 +17,15 @@ const EYE_HEIGHT = 1.35
 // How far a bot can "see". Also the radius used to decide who witnessed a
 // kill or a vent, which is what keeps bot knowledge honest (bot-players P3).
 const SENSE_RADIUS = 9
-const KILL_RANGE = 2.5
+// Deliberately short: the user's complaint was that bots killed by merely
+// walking near you. An attack now needs the impostor genuinely on top of
+// its target, and it takes MAX_HEALTH of them.
+const ATTACK_RANGE = 1.4
 
+// Two separate timers. Between hits on the same victim the gap is short, or
+// three hits would never land before the target walks away; after a kill the
+// impostor stands down for much longer.
+const ATTACK_COOLDOWN_MS = 1200
 const KILL_COOLDOWN_MS = 15000
 // The impostor bot doesn't kill the instant it finds a lone target at match
 // start - spec BOT-06 asks for a cooldown so it isn't the same opening move
@@ -66,6 +73,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
         goalTaskId: null,
         taskHoldRemaining: 0,
         nextKillAllowedAt: 0,
+        nextAttackAllowedAt: 0,
         nextVentAllowedAt: 0,
         voteTimer: null,
       })
@@ -190,18 +198,27 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
 
   function stepImpostor(bot, match, deltaSeconds, positions, now) {
     const witnesses = playersNear(bot.position, positions, bot.id)
+    // Another impostor standing nearby is not a witness to worry about, and
+    // must never be treated as a target.
+    const targets = witnesses.filter((id) => gameState.getRole(match, id) !== 'impostor')
+    const bystanders = witnesses.length - targets.length
 
-    // BOT-06/BOT-04: kill only when exactly one other living player is
-    // around, i.e. there is nobody left to witness it.
-    if (witnesses.length === 1 && now >= bot.nextKillAllowedAt) {
-      const targetId = witnesses[0]
+    // Attack only when a single crewmate is around with nobody else to see
+    // it. The victim survives the first hits, so the bot must stay on them.
+    if (targets.length === 1 && bystanders === witnesses.length - 1 && now >= bot.nextKillAllowedAt) {
+      const targetId = targets[0]
       const targetPosition = positions.get(targetId)
-      if (targetPosition && distance2D(bot.position, targetPosition) <= KILL_RANGE) {
-        if (gameActions.doKill(bot.id, targetId)) {
-          bot.nextKillAllowedAt = now + KILL_COOLDOWN_MS
-          bot.path = null
-          return
+      if (targetPosition && distance2D(bot.position, targetPosition) <= ATTACK_RANGE) {
+        if (now >= bot.nextAttackAllowedAt && gameActions.doAttack(bot.id, targetId)) {
+          bot.nextAttackAllowedAt = now + ATTACK_COOLDOWN_MS
+          if (!gameState.isAlive(match, targetId)) {
+            // Only a completed kill triggers the long stand-down.
+            bot.nextKillAllowedAt = now + KILL_COOLDOWN_MS
+            bot.path = null
+          }
         }
+        // Keep closing/holding position while the victim still stands.
+        return
       } else {
         // Stalk: close the distance on the isolated target. A straight line
         // is only safe when both are inside the same open room - otherwise
@@ -322,13 +339,16 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     }
   }
 
-  function onKill(killerId, victimId) {
+  // Any attack is worth witnessing, not just the fatal one - seeing someone
+  // being beaten is exactly the evidence a bot should act on.
+  function onAttack(attackerId, victimId, died) {
     const now = Date.now()
-    // The death itself is public (the server broadcasts playerDied to
-    // everyone), but *who did it* only reaches bots that were close enough
-    // to see it happen.
-    for (const bot of bots.values()) bot.brain.noteDeath(victimId, now)
-    fanOutSighting(killerId, (bot, roomId) => bot.brain.noteWitnessedKill(killerId, victimId, roomId, now))
+    if (died) {
+      // The death itself is public (the server broadcasts playerDied to
+      // everyone), but *who did it* only reaches bots close enough to see.
+      for (const bot of bots.values()) bot.brain.noteDeath(victimId, now)
+    }
+    fanOutSighting(attackerId, (bot, roomId) => bot.brain.noteWitnessedKill(attackerId, victimId, roomId, now))
   }
 
   function onVent(playerId) {
@@ -410,6 +430,6 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     stop,
     isBot,
     setPaused,
-    hooks: { onKill, onVent, onMeetingStarted, onMeetingEnded, onGameOver: () => stop() },
+    hooks: { onAttack, onVent, onMeetingStarted, onMeetingEnded, onGameOver: () => stop() },
   }
 }

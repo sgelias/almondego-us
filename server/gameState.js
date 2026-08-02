@@ -2,6 +2,11 @@ import { TASK_LOCATIONS } from '../shared/taskPool.js'
 
 const TASKS_PER_CREWMATE = 3
 
+// Hits needed to kill. The original one-touch kill made deaths feel
+// arbitrary - the impostor only had to brush past you. Three hits give the
+// victim time to notice, react and run.
+export const MAX_HEALTH = 3
+
 function pickRandomSubset(items, count, randomFn) {
   const pool = [...items]
   for (let i = 0; i < count; i += 1) {
@@ -31,29 +36,52 @@ function tasksSummary(match) {
   return { completed, total, allDone: total > 0 && completed === total }
 }
 
-export function createMatch(playerIds, randomFn) {
-  const impostorIndex = Math.floor(randomFn() * playerIds.length)
-  const impostorId = playerIds[impostorIndex]
+export function createMatch(playerIds, randomFn, { impostorCount = 1 } = {}) {
+  const count = Math.max(1, Math.min(impostorCount, playerIds.length - 1))
+  const impostorIds = new Set(pickRandomSubset(playerIds, count, randomFn))
 
   const tasksByPlayer = new Map()
   const taskIds = TASK_LOCATIONS.map((task) => task.id)
   for (const playerId of playerIds) {
-    if (playerId === impostorId) continue
+    if (impostorIds.has(playerId)) continue
     const assigned = pickRandomSubset(taskIds, TASKS_PER_CREWMATE, randomFn)
     tasksByPlayer.set(playerId, assigned.map((taskId) => ({ taskId, done: false })))
   }
 
   return {
-    impostorId,
+    impostorIds,
     alive: new Set(playerIds),
+    health: new Map(playerIds.map((id) => [id, MAX_HEALTH])),
     tasksByPlayer,
     phase: 'playing',
     votes: new Map(),
   }
 }
 
+export function getImpostorIds(match) {
+  return [...match.impostorIds]
+}
+
+export function getHealth(match, playerId) {
+  return match.health.get(playerId) ?? 0
+}
+
+// The only place health goes down. recordDeath remains the single transition
+// out of `alive`, so ejection and disconnect keep working untouched and
+// checkWinCondition still reads `alive` alone rather than inferring life
+// from health - two sources of truth about who is alive is how the win
+// conditions went wrong before (L-009/L-011).
+export function damage(match, playerId) {
+  if (!match.alive.has(playerId)) return { health: getHealth(match, playerId), died: false }
+  const health = Math.max(0, getHealth(match, playerId) - 1)
+  match.health.set(playerId, health)
+  if (health > 0) return { health, died: false }
+  recordDeath(match, playerId)
+  return { health: 0, died: true }
+}
+
 export function getRole(match, playerId) {
-  return playerId === match.impostorId ? 'impostor' : 'crewmate'
+  return match.impostorIds.has(playerId) ? 'impostor' : 'crewmate'
 }
 
 export function getAssignedTasks(match, playerId) {
@@ -86,15 +114,21 @@ export function recordDeath(match, playerId) {
 // the one Crewmate still behind on tasks would hand the crew a win they
 // never actually finished (see STATE.md L-011).
 export function checkWinCondition(match, { checkTasks = true } = {}) {
-  if (!match.alive.has(match.impostorId)) return 'crew'
+  // "No impostor left alive", not "the impostor is dead" - with two
+  // impostors the latter fires the moment either one is ejected.
+  let livingImpostors = 0
+  for (const id of match.impostorIds) {
+    if (match.alive.has(id)) livingImpostors += 1
+  }
+  if (livingImpostors === 0) return 'crew'
 
   if (checkTasks) {
     const { allDone } = tasksSummary(match)
     if (allDone) return 'crew'
   }
 
-  const livingCrewCount = match.alive.size - 1
-  if (livingCrewCount <= 1) return 'impostor'
+  const livingCrewCount = match.alive.size - livingImpostors
+  if (livingCrewCount <= livingImpostors) return 'impostor'
 
   return null
 }
@@ -133,5 +167,5 @@ export function tallyVotes(match) {
   }
 
   const ejectedId = !tied && topTarget !== 'skip' && topCount > 0 ? topTarget : null
-  return { ejectedId, wasImpostor: ejectedId !== null && ejectedId === match.impostorId }
+  return { ejectedId, wasImpostor: ejectedId !== null && match.impostorIds.has(ejectedId) }
 }

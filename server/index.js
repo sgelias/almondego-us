@@ -13,6 +13,10 @@ const PORT = process.env.PORT || 8080
 // starting at parity) - a 6-player match is never at parity on kickoff.
 const MIN_PLAYERS_TO_START = 1
 const TARGET_PLAYER_COUNT = 6
+// With N impostors, parity is reached at N crew vs N impostors, so crew must
+// start strictly ahead: at most floor((total-1)/2) impostors. For 6 players
+// that is 2.
+const maxImpostors = (total) => Math.max(1, Math.floor((total - 1) / 2))
 
 function getLanAddress() {
   const interfaces = networkInterfaces()
@@ -107,7 +111,7 @@ const gameActions = createGameActions({
   broadcastToAll,
   sendToPlayer,
   hooks: {
-    onKill: (killerId, victimId) => botRunner?.hooks.onKill(killerId, victimId),
+    onAttack: (attackerId, victimId, died) => botRunner?.hooks.onAttack(attackerId, victimId, died),
     onVent: (playerId) => botRunner?.hooks.onVent(playerId),
     onMeetingStarted: (info) => botRunner?.hooks.onMeetingStarted(info),
     onMeetingEnded: () => botRunner?.hooks.onMeetingEnded(),
@@ -125,7 +129,7 @@ botRunner = createBotRunner({
   },
 })
 
-function startMatch(socket) {
+function startMatch(socket, requestedImpostors) {
   if (socket.playerId !== hostId) return
   gameActions.cancelTimers()
   botRunner.stop()
@@ -158,8 +162,12 @@ function startMatch(socket) {
   }
 
   busyPlayers.clear()
+  const impostorCount = Math.min(
+    Math.max(1, Number(requestedImpostors) || 1),
+    maxImpostors(players.size)
+  )
   broadcastToAll(MESSAGE_TYPE.START, {})
-  gameActions.startMatch([...players.keys()])
+  gameActions.startMatch([...players.keys()], { impostorCount })
   botRunner.start()
   syncBotPause()
 }
@@ -213,15 +221,15 @@ wss.on('connection', (socket) => {
       }
 
       case MESSAGE_TYPE.START:
-        startMatch(socket)
+        startMatch(socket, message.impostorCount)
         return
 
       case MESSAGE_TYPE.TASK_COMPLETE:
         gameActions.doTaskComplete(socket.playerId, message.taskId)
         return
 
-      case MESSAGE_TYPE.KILL:
-        gameActions.doKill(socket.playerId, message.targetId)
+      case MESSAGE_TYPE.ATTACK:
+        gameActions.doAttack(socket.playerId, message.targetId)
         return
 
       case MESSAGE_TYPE.CALL_MEETING:

@@ -4,9 +4,22 @@ import { createAvatar, disposeAvatar, EYE_TO_FEET } from './playerAvatar.js'
 
 const LERP_RATE = 10
 
+// Name and health live in the SAME CSS2DObject. A second one per player
+// would double the cleanup surface that already went wrong once (L-004) and
+// every visibility path would have to hide both.
 function createLabel(name, color) {
   const div = document.createElement('div')
-  div.textContent = name
+  div.style.textAlign = 'center'
+  div.style.lineHeight = '1.15'
+
+  const nameLine = document.createElement('div')
+  nameLine.textContent = name
+  div.appendChild(nameLine)
+
+  const healthLine = document.createElement('div')
+  healthLine.style.fontSize = '0.8rem'
+  healthLine.style.letterSpacing = '0.08em'
+  div.appendChild(healthLine)
   // Matching the avatar's body colour makes "who is that" readable at a
   // glance without having to get close enough to see the model.
   div.style.color = `#${color.toString(16).padStart(6, '0')}`
@@ -18,7 +31,15 @@ function createLabel(name, color) {
 
   const label = new CSS2DObject(div)
   label.position.set(0, 2.1, 0)
+  label.userData.healthLine = healthLine
   return label
+}
+
+function renderHealth(healthLine, health, maxHealth) {
+  let text = ''
+  for (let i = 0; i < maxHealth; i += 1) text += i < health ? '♥' : '♡'
+  healthLine.textContent = text
+  healthLine.style.color = health <= 1 ? '#ff4d4d' : '#ff9d9d'
 }
 
 // Network "position" is the sender's camera/eye position (see main.js). The
@@ -31,8 +52,9 @@ function toFeetPosition(position) {
 // SPEC_DEVIATION: design.md's signature was createRemotePlayers(scene, labelRenderer).
 // CSS2DObject only needs to be added to the scene graph - the CSS2DRenderer that
 // draws it doesn't need a reference back, so the unused param was dropped.
-export function createRemotePlayers(scene) {
+export function createRemotePlayers(scene, { maxHealth = 3 } = {}) {
   const players = new Map()
+  const healthById = new Map()
 
   function upsert(id, name, colorIndex, position, rotationY, seq) {
     let entry = players.get(id)
@@ -41,6 +63,7 @@ export function createRemotePlayers(scene) {
       // avatar for a kill via interactSystem's raycast.
       const { group, color } = createAvatar(id, colorIndex, { interactable: true, kind: 'player', killTargetId: id })
       const label = createLabel(name, color)
+      renderHealth(label.userData.healthLine, healthById.get(id) ?? maxHealth, maxHealth)
       group.add(label)
 
       const [x, y, z] = toFeetPosition(position)
@@ -62,6 +85,18 @@ export function createRemotePlayers(scene) {
     const [x, y, z] = toFeetPosition(position)
     entry.target.set(x, y, z)
     entry.targetRotationY = rotationY
+  }
+
+  // Health can arrive before a player's first `state` message, so it is
+  // stored by id and applied when the avatar appears.
+  function setHealth(id, health) {
+    healthById.set(id, health)
+    const entry = players.get(id)
+    if (entry) renderHealth(entry.label.userData.healthLine, health, maxHealth)
+  }
+
+  function resetHealth() {
+    healthById.clear()
   }
 
   function remove(id) {
@@ -109,5 +144,5 @@ export function createRemotePlayers(scene) {
     return [...players.values()].filter((entry) => entry.visible !== false).map((entry) => entry.group)
   }
 
-  return { upsert, remove, update, applyVisibility, getMeshes }
+  return { upsert, remove, update, applyVisibility, getMeshes, setHealth, resetHealth }
 }

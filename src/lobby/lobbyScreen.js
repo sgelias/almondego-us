@@ -109,8 +109,37 @@ export function showLobby({ onHostAndJoin, onJoin, onStart }) {
   research.style.display = 'none'
   overlay.appendChild(research)
 
+  // Host-only match setting. The server clamps this against the roster size
+  // (crew must start strictly ahead of the impostors), so a value here is a
+  // request, not a guarantee.
+  const settings = document.createElement('div')
+  settings.style.display = 'none'
+  settings.style.alignItems = 'center'
+  settings.style.gap = '0.5rem'
+  settings.style.color = '#9fb0c4'
+  const settingsLabel = document.createElement('span')
+  settingsLabel.textContent = 'Impostores:'
+  settings.appendChild(settingsLabel)
+  const impostorSelect = document.createElement('select')
+  impostorSelect.style.padding = '0.35rem 0.5rem'
+  impostorSelect.style.borderRadius = '8px'
+  impostorSelect.style.border = '2px solid #3d4a5c'
+  impostorSelect.style.background = '#1b2431'
+  impostorSelect.style.color = '#eaf2ff'
+  impostorSelect.style.fontFamily = 'inherit'
+  for (const value of [1, 2]) {
+    const option = document.createElement('option')
+    option.value = String(value)
+    option.textContent = String(value)
+    impostorSelect.appendChild(option)
+  }
+  settings.appendChild(impostorSelect)
+  overlay.appendChild(settings)
+
   const startButton = document.createElement('button')
   startButton.textContent = 'Iniciar Partida'
+  primaryButton(startButton)
+  startButton.style.minWidth = '12rem'
   startButton.style.display = 'none'
   overlay.appendChild(startButton)
 
@@ -125,7 +154,7 @@ export function showLobby({ onHostAndJoin, onJoin, onStart }) {
   })
 
   startButton.addEventListener('click', () => {
-    onStart()
+    onStart(Number(impostorSelect.value))
   })
 
   return {
@@ -204,6 +233,10 @@ export function showLobby({ onHostAndJoin, onJoin, onStart }) {
     },
     setIsHost(isHost) {
       startButton.style.display = isHost ? 'block' : 'none'
+      settings.style.display = isHost ? 'flex' : 'none'
+    },
+    getImpostorCount() {
+      return Number(impostorSelect.value)
     },
     setConnected() {
       panel.style.display = 'none'

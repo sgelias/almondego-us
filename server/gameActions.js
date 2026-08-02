@@ -41,7 +41,7 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
     const winner = gameState.checkWinCondition(match, { checkTasks })
     if (!winner) return
     match.phase = 'gameOver'
-    broadcastToAll(MESSAGE_TYPE.GAME_OVER, { winner, impostorId: match.impostorId })
+    broadcastToAll(MESSAGE_TYPE.GAME_OVER, { winner, impostorIds: gameState.getImpostorIds(match) })
     hooks.onGameOver?.()
   }
 
@@ -60,13 +60,15 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
     checkAndBroadcastWin(false)
   }
 
-  function startMatch(playerIds) {
-    const match = gameState.createMatch(playerIds, Math.random)
+  function startMatch(playerIds, options) {
+    const match = gameState.createMatch(playerIds, Math.random, options)
     setMatch(match)
     for (const playerId of playerIds) {
       sendToPlayer(playerId, MESSAGE_TYPE.ROLE, {
         role: gameState.getRole(match, playerId),
         taskIds: gameState.getAssignedTasks(match, playerId),
+        maxHealth: gameState.MAX_HEALTH,
+        impostorCount: gameState.getImpostorIds(match).length,
       })
     }
     return match
@@ -85,16 +87,27 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
     return true
   }
 
-  function doKill(playerId, targetId) {
+  // One hit, not one kill. Only the blow that empties the health bar ends a
+  // life, and only that blow re-checks the win condition - a non-fatal hit
+  // changes nothing the win rules care about.
+  function doAttack(playerId, targetId) {
     const match = getMatch()
     if (!match || match.phase !== 'playing') return false
     if (!playerId || gameState.getRole(match, playerId) !== 'impostor') return false
     if (!gameState.isAlive(match, playerId)) return false
     if (targetId === playerId || !gameState.isAlive(match, targetId)) return false
+    // Impostors cannot attack each other.
+    if (gameState.getRole(match, targetId) === 'impostor') return false
 
-    gameState.recordDeath(match, targetId)
+    const { health, died } = gameState.damage(match, targetId)
+    // Broadcast to everyone: health is shown above every player's head, so
+    // this is the one place combat state deliberately travels past the
+    // limited-vision rule.
+    broadcastToAll(MESSAGE_TYPE.PLAYER_HURT, { id: targetId, health, attackerId: playerId })
+    hooks.onAttack?.(playerId, targetId, died)
+
+    if (!died) return true
     broadcastToAll(MESSAGE_TYPE.PLAYER_DIED, { id: targetId, cause: 'killed' })
-    hooks.onKill?.(playerId, targetId)
     checkAndBroadcastWin(false)
     return true
   }
@@ -182,7 +195,7 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
     isAlive,
     startMatch,
     doTaskComplete,
-    doKill,
+    doAttack,
     doCallMeeting,
     doVote,
     doVent,

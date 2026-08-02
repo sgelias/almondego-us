@@ -12,6 +12,10 @@ import {
   endMeeting,
   castVote,
   tallyVotes,
+  damage,
+  getHealth,
+  getImpostorIds,
+  MAX_HEALTH,
 } from './gameState.js'
 import { TASK_LOCATIONS } from '../shared/taskPool.js'
 
@@ -198,4 +202,118 @@ test('castVote overwrites a voter\'s earlier vote (last vote wins)', () => {
   castVote(match, 'b', 'b')
   const result = tallyVotes(match)
   assert.equal(result.ejectedId, 'b')
+})
+
+// --- multiple impostors + health (new dynamic) ---
+
+test('createMatch assigns the requested number of impostors', () => {
+  for (const count of [1, 2, 3]) {
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+    const match = createMatch(ids, seededRandom(count * 13), { impostorCount: count })
+    const impostors = ids.filter((id) => getRole(match, id) === 'impostor')
+    assert.equal(impostors.length, count, `asked for ${count} impostors, got ${impostors.length}`)
+  }
+})
+
+test('createMatch defaults to a single impostor', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+  const match = createMatch(ids, seededRandom(5))
+  assert.equal(ids.filter((id) => getRole(match, id) === 'impostor').length, 1)
+})
+
+test('impostors get no tasks regardless of how many there are', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+  const match = createMatch(ids, seededRandom(9), { impostorCount: 2 })
+  for (const id of ids) {
+    if (getRole(match, id) !== 'impostor') continue
+    assert.deepEqual(getAssignedTasks(match, id), [])
+  }
+})
+
+test('with two impostors, ejecting one does NOT end the match', () => {
+  // The branch that regresses: the old crew-win test was "the impostor is
+  // dead", which with two impostors fires as soon as either one goes.
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+  const match = createMatch(ids, seededRandom(21), { impostorCount: 2 })
+  const impostors = ids.filter((id) => getRole(match, id) === 'impostor')
+  assert.equal(impostors.length, 2)
+
+  recordDeath(match, impostors[0])
+  assert.equal(checkWinCondition(match, { checkTasks: false }), null)
+
+  recordDeath(match, impostors[1])
+  assert.equal(checkWinCondition(match, { checkTasks: false }), 'crew')
+})
+
+test('with two impostors, parity is reached against the pair, not against one', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+  const match = createMatch(ids, seededRandom(21), { impostorCount: 2 })
+  const impostors = ids.filter((id) => getRole(match, id) === 'impostor')
+  const crew = ids.filter((id) => !impostors.includes(id))
+
+  recordDeath(match, crew[0]) // 3 crew vs 2 impostors
+  assert.equal(checkWinCondition(match, { checkTasks: false }), null)
+
+  recordDeath(match, crew[1]) // 2 crew vs 2 impostors -> parity
+  assert.equal(checkWinCondition(match, { checkTasks: false }), 'impostor')
+})
+
+test('a player starts at full health and survives the first two hits', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const match = createMatch(ids, seededRandom(3))
+  const victim = ids.find((id) => getRole(match, id) === 'crewmate')
+
+  assert.equal(getHealth(match, victim), MAX_HEALTH)
+
+  const first = damage(match, victim)
+  assert.equal(first.died, false)
+  assert.equal(first.health, MAX_HEALTH - 1)
+  assert.equal(isAlive(match, victim), true)
+
+  const second = damage(match, victim)
+  assert.equal(second.died, false)
+  assert.equal(isAlive(match, victim), true)
+})
+
+test('the third hit kills, and only then does the player leave the alive set', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const match = createMatch(ids, seededRandom(3))
+  const victim = ids.find((id) => getRole(match, id) === 'crewmate')
+
+  damage(match, victim)
+  damage(match, victim)
+  const fatal = damage(match, victim)
+
+  assert.equal(fatal.died, true)
+  assert.equal(fatal.health, 0)
+  assert.equal(isAlive(match, victim), false)
+})
+
+test('hitting an already dead player changes nothing', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const match = createMatch(ids, seededRandom(3))
+  const victim = ids.find((id) => getRole(match, id) === 'crewmate')
+  damage(match, victim)
+  damage(match, victim)
+  damage(match, victim)
+
+  const again = damage(match, victim)
+  assert.equal(again.died, false, 'a dead player must not "die" a second time')
+  assert.equal(again.health, 0)
+})
+
+test('a non-fatal hit does not change the win condition', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const match = createMatch(ids, seededRandom(3))
+  const victim = ids.find((id) => getRole(match, id) === 'crewmate')
+  damage(match, victim)
+  assert.equal(checkWinCondition(match, { checkTasks: false }), null)
+})
+
+test('getImpostorIds reports every impostor', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+  const match = createMatch(ids, seededRandom(33), { impostorCount: 2 })
+  const reported = [...getImpostorIds(match)].sort()
+  const expected = ids.filter((id) => getRole(match, id) === 'impostor').sort()
+  assert.deepEqual(reported, expected)
 })

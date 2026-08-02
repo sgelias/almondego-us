@@ -5,7 +5,7 @@ import { COLORS, screenBackdrop, sectionLabel, primaryButton } from '../ui/theme
 // a restart - previously it just appended an overlay that could never be
 // removed, which is fine for a match that ends the session but not for
 // "play again".
-export function showGameOver(winner, impostorName, impostorColorIndex, { canRestart, onRestart }) {
+export function showGameOver(winner, impostors, { canRestart, onRestart }) {
   const crewWon = winner === 'crew'
 
   const overlay = document.createElement('div')
@@ -19,22 +19,38 @@ export function showGameOver(winner, impostorName, impostorColorIndex, { canRest
   overlay.appendChild(label)
 
   const title = document.createElement('h1')
-  title.textContent = crewWon ? 'Tripulantes vencem!' : 'Impostor vence!'
+  title.textContent = crewWon ? 'Tripulantes vencem!' : impostors.length > 1 ? 'Impostores vencem!' : 'Impostor vence!'
   title.style.margin = '0.2rem 0 0.6rem'
   title.style.fontSize = 'clamp(1.8rem, 6vw, 3rem)'
   title.style.color = crewWon ? COLORS.accent : COLORS.danger
   title.style.textAlign = 'center'
   overlay.appendChild(title)
 
-  const icon = crewmateSvg(impostorColorIndex, 110)
-  overlay.appendChild(icon)
-
   const impostorLine = document.createElement('div')
-  impostorLine.textContent = `O impostor era: ${impostorName}`
-  impostorLine.style.fontWeight = '700'
-  impostorLine.style.fontSize = '1.15rem'
-  impostorLine.style.marginTop = '0.6rem'
+  impostorLine.textContent = impostors.length > 1 ? 'Os impostores eram:' : 'O impostor era:'
+  impostorLine.style.color = COLORS.muted
+  impostorLine.style.marginBottom = '0.5rem'
   overlay.appendChild(impostorLine)
+
+  const row = document.createElement('div')
+  row.style.display = 'flex'
+  row.style.gap = '1.2rem'
+  row.style.flexWrap = 'wrap'
+  row.style.justifyContent = 'center'
+  for (const impostor of impostors) {
+    const column = document.createElement('div')
+    column.style.display = 'flex'
+    column.style.flexDirection = 'column'
+    column.style.alignItems = 'center'
+    column.style.gap = '0.35rem'
+    column.appendChild(crewmateSvg(impostor.colorIndex, 96))
+    const name = document.createElement('span')
+    name.textContent = impostor.name
+    name.style.fontWeight = '700'
+    column.appendChild(name)
+    row.appendChild(column)
+  }
+  overlay.appendChild(row)
 
   if (canRestart) {
     const restart = document.createElement('button')

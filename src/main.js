@@ -13,6 +13,7 @@ import { createNetClient, CONNECTED, CONNECTION_ERROR } from './net/client.js'
 import { createRemotePlayers } from './net/remotePlayers.js'
 import { colorForIndex } from './net/playerAvatar.js'
 import { createRoleUI } from './game/roleUI.js'
+import { createHealthUI } from './game/healthUI.js'
 import { createTaskQuiz, WRONG_ANSWER_LOCKOUT_MS } from './game/taskQuiz.js'
 import { drawTaskQuestion, drawResearchQuestion } from '../shared/questionBank.js'
 import { createMeetingUI } from './game/meetingUI.js'
@@ -125,7 +126,7 @@ function getPromptText(target) {
     return 'Pressione E para chamar reunião'
   }
   if (kind === 'player') {
-    return localRole === 'impostor' ? 'Pressione E para matar' : null
+    return localRole === 'impostor' ? 'Pressione E para atacar' : null
   }
   return null
 }
@@ -139,6 +140,7 @@ const interactSystem = createInteractSystem(
 )
 
 const roleUI = createRoleUI()
+const healthUI = createHealthUI()
 const minimap = createMinimap(ROOM_LAYOUT, SKELD_CORRIDORS, { corridorWidth: CORRIDOR_WIDTH })
 minimap.mount()
 const ventTransition = createVentTransition()
@@ -158,6 +160,7 @@ let gameEnded = false
 let localPlayerId = null
 let localRole = null
 let localAlive = true
+let localMaxHealth = 3
 let isHost = false
 let deathNotice = null
 let gameOverScreen = null
@@ -259,7 +262,7 @@ function handleInteractPress() {
   } else if (kind === 'emergencyButton') {
     netClient.send(MESSAGE_TYPE.CALL_MEETING, {})
   } else if (kind === 'player' && localRole === 'impostor') {
-    netClient.send(MESSAGE_TYPE.KILL, { targetId: target.userData.killTargetId })
+    netClient.send(MESSAGE_TYPE.ATTACK, { targetId: target.userData.killTargetId })
   }
 }
 
@@ -331,6 +334,9 @@ function connect(url, name, lobby) {
 
   netClient.on(MESSAGE_TYPE.ROLE, (msg) => {
     localRole = msg.role
+    localMaxHealth = msg.maxHealth ?? 3
+    remotePlayers.resetHealth()
+    healthUI.show(localMaxHealth, localMaxHealth)
     assignedTaskIds.clear()
     for (const taskId of msg.taskIds) assignedTaskIds.add(taskId)
     completedTaskIds.clear()
@@ -349,14 +355,22 @@ function connect(url, name, lobby) {
     roleUI.updateProgress(msg.completed, msg.total)
   })
 
+  netClient.on(MESSAGE_TYPE.PLAYER_HURT, (msg) => {
+    remotePlayers.setHealth(msg.id, msg.health)
+    if (msg.id !== localPlayerId) return
+    // Only the victim gets the screen flash - it is damage feedback, not a
+    // broadcast event.
+    healthUI.hit(msg.health)
+    sfx.kill()
+  })
+
   netClient.on(MESSAGE_TYPE.PLAYER_DIED, (msg) => {
     remotePlayers.remove(msg.id)
     if (msg.id === localPlayerId) {
       localAlive = false
+      healthUI.hide()
       sfx.death()
       showDeathNotice()
-    } else {
-      sfx.kill()
     }
   })
 
@@ -408,17 +422,20 @@ function connect(url, name, lobby) {
     const iWon = (msg.winner === 'crew') === (localRole !== 'impostor')
     if (iWon) sfx.win()
     else sfx.lose()
-    const impostorName =
-      roster.get(msg.impostorId)?.name ?? (msg.impostorId === localPlayerId ? 'você' : 'Desconhecido')
+    const impostorIds = msg.impostorIds ?? []
+    const impostors = impostorIds.map((id) => ({
+      name: roster.get(id)?.name ?? (id === localPlayerId ? 'você' : 'Desconhecido'),
+      colorIndex: roster.get(id)?.colorIndex,
+    }))
     // Never stack two of these: a second gameOver would leave an identical
     // overlay underneath the one being dismissed, which reads as a dead
     // restart button.
     gameOverScreen?.remove()
-    gameOverScreen = showGameOver(msg.winner, impostorName, roster.get(msg.impostorId)?.colorIndex, {
+    gameOverScreen = showGameOver(msg.winner, impostors, {
       // Only the host can start a match - the server rejects `start` from
       // anyone else - so only the host gets the button.
       canRestart: isHost,
-      onRestart: () => netClient.send(MESSAGE_TYPE.START, {}),
+      onRestart: () => netClient.send(MESSAGE_TYPE.START, { impostorCount: lobby.getImpostorCount() }),
     })
   })
 
@@ -452,6 +469,9 @@ function resetForNewMatch() {
 
   for (const timer of meetingTimers) clearTimeout(timer)
   meetingTimers = []
+
+  healthUI.hide()
+  remotePlayers.resetHealth()
 
   assignedTaskIds.clear()
   completedTaskIds.clear()
@@ -531,8 +551,8 @@ const lobby = showLobby({
   onJoin(address, name) {
     connect(`ws://${address}`, name, lobby)
   },
-  onStart() {
-    netClient.send(MESSAGE_TYPE.START, {})
+  onStart(impostorCount) {
+    netClient.send(MESSAGE_TYPE.START, { impostorCount })
   },
 })
 
