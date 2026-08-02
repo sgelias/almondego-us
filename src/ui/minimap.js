@@ -11,7 +11,10 @@ import { COLORS } from './theme.js'
 // information the vision rule exists to take away.
 
 const PADDING = 10
-const ROOM_LABELS = {
+// Exported so the task guide names rooms exactly as the map does - a guide
+// that says a different name than the map sends the child looking for a room
+// that appears nowhere.
+export const ROOM_LABELS = {
   cafeteria: 'Refeitório',
   weapons: 'Armas',
   navigation: 'Navegação',
@@ -92,6 +95,10 @@ export function createMinimap(roomLayout, corridors, { corridorWidth = 4 } = {})
 
   const staticLayer = document.createElementNS(svgNs, 'g')
   svg.appendChild(staticLayer)
+  // Task markers sit between the rooms and the player dots: always visible,
+  // never covering a player.
+  const taskLayer = document.createElementNS(svgNs, 'g')
+  svg.appendChild(taskLayer)
   const markerLayer = document.createElementNS(svgNs, 'g')
   svg.appendChild(markerLayer)
 
@@ -147,9 +154,27 @@ export function createMinimap(roomLayout, corridors, { corridorWidth = 4 } = {})
     return dot
   }
 
+  // Your own outstanding tasks, drawn as pulsing stars so the map answers
+  // "where do I have to go" and not only "where am I".
+  function setTasks(tasks) {
+    taskLayer.innerHTML = ''
+    for (const task of tasks) {
+      const star = document.createElementNS(svgNs, 'text')
+      star.textContent = '★'
+      star.setAttribute('x', toX(task.x))
+      star.setAttribute('y', toY(task.z) + 1.6)
+      star.setAttribute('text-anchor', 'middle')
+      star.setAttribute('fill', '#ffd34d')
+      star.setAttribute('font-size', '4.5')
+      taskLayer.appendChild(star)
+    }
+  }
+
   let visible = false
 
   return {
+    setTasks,
+
     isVisible() {
       return visible
     },

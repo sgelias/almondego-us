@@ -15,6 +15,8 @@ import { colorForIndex } from './net/playerAvatar.js'
 import { createRoleUI } from './game/roleUI.js'
 import { createHealthUI } from './game/healthUI.js'
 import { createSpellUI } from './game/spellUI.js'
+import { createTaskGuide } from './game/taskGuide.js'
+import { ROOM_LABELS } from './ui/minimap.js'
 import { getSpellById } from '../shared/spellPool.js'
 import { createTaskQuiz, WRONG_ANSWER_LOCKOUT_MS } from './game/taskQuiz.js'
 import { drawTaskQuestion, drawResearchQuestion } from '../shared/questionBank.js'
@@ -144,6 +146,7 @@ const interactSystem = createInteractSystem(
 const roleUI = createRoleUI()
 const healthUI = createHealthUI()
 const spellUI = createSpellUI()
+const taskGuide = createTaskGuide(scene, camera)
 const minimap = createMinimap(ROOM_LAYOUT, SKELD_CORRIDORS, { corridorWidth: CORRIDOR_WIDTH })
 minimap.mount()
 const ventTransition = createVentTransition()
@@ -213,6 +216,29 @@ function showDeathNotice() {
 // console, which is exactly when an Impostor can reach them, and the mouse
 // has to be free to click the answers (the same pointer-lock problem the
 // voting UI hit, see STATE.md L-008).
+// Where a task console physically is, from the same data the map is built
+// from - so a guide arrow can never point somewhere the console is not.
+function taskWorldPosition(task) {
+  const room = ROOM_LAYOUT.find((r) => r.id === task.roomId)
+  return [room.center[0] + task.offset[0], 0, room.center[2] + task.offset[2]]
+}
+
+function refreshTaskGuide() {
+  if (localRole !== 'crewmate') {
+    taskGuide.clear()
+    return
+  }
+  const targets = TASK_LOCATIONS.filter(
+    (task) => assignedTaskIds.has(task.id) && !completedTaskIds.has(task.id)
+  ).map((task) => ({
+    taskId: task.id,
+    position: taskWorldPosition(task),
+    roomName: ROOM_LABELS[task.roomId] ?? task.roomId,
+  }))
+  taskGuide.setTargets(targets)
+  minimap.setTasks(targets.map((t) => ({ x: t.position[0], z: t.position[2] })))
+}
+
 function openTaskQuiz(taskId) {
   if (localRole !== 'crewmate') return
   if (!assignedTaskIds.has(taskId) || completedTaskIds.has(taskId)) return
@@ -234,6 +260,8 @@ function openTaskQuiz(taskId) {
       completedTaskIds.add(taskId)
       sfx.taskDone()
       roleUI.markTaskDone(taskId)
+      taskGuide.remove(taskId)
+      refreshTaskGuide()
       netClient.send(MESSAGE_TYPE.TASK_COMPLETE, { taskId })
     } else if (result === 'wrong') {
       // The cost of a wrong answer: this console is unusable for a few
@@ -371,6 +399,7 @@ function connect(url, name, lobby) {
     roleUI.showRole(msg.role, taskLabelsById, Number.isInteger(myColorIndex) ? colorForIndex(myColorIndex) : null)
 
     taskLockoutUntil.clear()
+    refreshTaskGuide()
   })
 
   netClient.on(MESSAGE_TYPE.TASKS_PROGRESS, (msg) => {
@@ -538,6 +567,7 @@ function resetForNewMatch() {
 
   healthUI.hide()
   spellUI.hide()
+  taskGuide.clear()
   radarUntil = 0
   remotePlayers.resetHealth()
 
@@ -596,6 +626,7 @@ function startGame(lobby) {
     })
     minimap.render(camera.position, roster.get(localPlayerId)?.colorIndex, mapMarkers)
     interactSystem.update()
+    taskGuide.update(clock.elapsedTime)
 
     stateSendAccumulator += deltaTime
     if (stateSendAccumulator >= STATE_SEND_INTERVAL) {

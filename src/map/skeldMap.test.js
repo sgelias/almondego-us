@@ -4,6 +4,7 @@ import { buildSkeldMap } from './skeldMap.js'
 import { buildWorldOctree } from './worldOctree.js'
 import { SKELD_CORRIDORS } from '../../shared/skeldCorridors.js'
 import { ROOM_LAYOUT } from '../../shared/skeldRooms.js'
+import { TASK_LOCATIONS } from '../../shared/taskPool.js'
 
 // `three` is a devDependency purely so these run. The browser still loads it
 // from the CDN import map (AD-003, no build step) - nothing here changes how
@@ -200,4 +201,46 @@ test('a player-sized body can reach all 14 rooms from the spawn', () => {
   }).map((room) => room.id)
 
   assert.deepEqual(unreachable, [], `rooms walled off from the spawn: ${unreachable.join(', ')}`)
+})
+
+test('a task guide arrow would point exactly at the real console', () => {
+  // The guide computes a task's world position from ROOM_LAYOUT + offset,
+  // while skeldMap places the actual console mesh. Those are two separate
+  // calculations: if they ever drift, the arrow points at empty floor and
+  // the player is sent to the wrong spot with full confidence.
+  const { interactables } = buildSkeldMap()
+
+  for (const task of TASK_LOCATIONS) {
+    const room = ROOM_LAYOUT.find((r) => r.id === task.roomId)
+    const guideX = room.center[0] + task.offset[0]
+    const guideZ = room.center[2] + task.offset[2]
+
+    const consoleMeshes = interactables.filter(
+      (mesh) => mesh.userData?.kind === 'task' && mesh.userData.taskId === task.id
+    )
+    assert.ok(consoleMeshes.length > 0, `no console mesh found for ${task.id}`)
+
+    for (const mesh of consoleMeshes) {
+      assert.ok(
+        Math.abs(mesh.position.x - guideX) < 0.01 && Math.abs(mesh.position.z - guideZ) < 0.01,
+        `${task.id}: guide points at ${guideX},${guideZ} but the console is at ${mesh.position.x},${mesh.position.z}`
+      )
+    }
+  }
+})
+
+test('every task console sits inside its own room, not in a wall', () => {
+  for (const task of TASK_LOCATIONS) {
+    const room = ROOM_LAYOUT.find((r) => r.id === task.roomId)
+    assert.ok(room, `${task.id} references a room that does not exist`)
+    const x = room.center[0] + task.offset[0]
+    const z = room.center[2] + task.offset[2]
+    // A console flush against a wall cannot be walked up to from every side.
+    const margin = 1.0
+    assert.ok(
+      Math.abs(x - room.center[0]) < room.size[0] / 2 - margin &&
+        Math.abs(z - room.center[2]) < room.size[2] / 2 - margin,
+      `${task.id} is too close to ${room.id}'s wall to reach comfortably`
+    )
+  }
 })
