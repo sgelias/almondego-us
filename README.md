@@ -25,7 +25,7 @@ que serviu a página, e quem entrar primeiro vira o anfitrião — é quem vê o
 botão **Iniciar Partida**.
 
 ```bash
-npm test     # 152 testes
+npm test     # 163 testes
 npm run server  # só o servidor de partida
 npm run web     # só o servidor do cliente
 ```
@@ -95,6 +95,16 @@ descobre uma morte. Discussão, votação por retrato, e o mais votado é ejetad
 
 A tripulação vence completando todas as tarefas ou ejetando todos os impostores.
 Os impostores vencem quando restam tantos deles quanto tripulantes.
+
+## Recados do mestre
+
+Quem hospeda tem um mural no lobby: uma caixinha para mandar indicações a
+todo mundo que está esperando — por onde começar, as regras da casa, o que
+combinar antes de começar. `Enter` envia, `Shift+Enter` quebra a linha.
+
+Só o anfitrião escreve, e só antes da partida começar: durante o jogo o mural
+fecha, senão ele seria um canal para furar a regra de só enxergar quem está na
+mesma sala. Quem chega atrasado recebe os recados anteriores.
 
 ## Música
 

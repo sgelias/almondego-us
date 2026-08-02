@@ -33,6 +33,8 @@ export const MESSAGE_TYPE = {
   EVENT_PANEL: 'eventPanel',
   EVENT_ENDED: 'eventEnded',
   ARM_PANEL: 'armPanel',
+  // The host's lobby notice board: instructions sent to everyone waiting.
+  LOBBY_NOTICE: 'lobbyNotice',
 }
 
 const KNOWN_TYPES = new Set(Object.values(MESSAGE_TYPE))

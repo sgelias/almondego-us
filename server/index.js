@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { randomUUID } from 'node:crypto'
 import { getLanAddress } from './lanAddress.js'
 import { MESSAGE_TYPE, isKnownMessageType } from '../shared/protocol.js'
+import { sanitizeNoticeText, pushNotice } from '../shared/lobbyNotices.js'
 import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
 import { createGameActions } from './gameActions.js'
 import { createBotRunner } from './botRunner.js'
@@ -55,6 +56,9 @@ const socketsByPlayerId = new Map()
 const humanPositions = new Map()
 let hostId = null
 let match = null
+// The host's pre-match instructions, kept so a player who joins late sees
+// what was already said instead of an empty board.
+const lobbyNotices = []
 // Players currently answering a task question. Bot simulation is paused
 // while this is non-empty (AD-009).
 const busyPlayers = new Set()
@@ -237,6 +241,7 @@ wss.on('connection', (socket) => {
             name: player.name,
             colorIndex: player.colorIndex,
           })),
+          notices: lobbyNotices,
         })
         broadcastToOthers(socket, MESSAGE_TYPE.PLAYER_JOINED, { id, name, colorIndex })
         return
@@ -252,6 +257,19 @@ wss.on('connection', (socket) => {
           rotationY: message.rotationY,
           seq: message.seq,
         })
+        return
+      }
+
+      case MESSAGE_TYPE.LOBBY_NOTICE: {
+        // Host only, and only between matches: this is a briefing board, not
+        // an in-game chat channel that would leak information past the
+        // vision rules the whole game is built on.
+        if (socket.playerId !== hostId || match) return
+        const text = sanitizeNoticeText(message.text)
+        if (!text) return
+        const notice = { text, at: Date.now() }
+        pushNotice(lobbyNotices, notice)
+        broadcastToAll(MESSAGE_TYPE.LOBBY_NOTICE, notice)
         return
       }
 

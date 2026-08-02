@@ -1,5 +1,6 @@
 import { crewmateSvg, crewmateRow } from '../ui/crewmateIcon.js'
 import { PANEL, primaryButton, textInput, screenBackdrop } from '../ui/theme.js'
+import { MAX_NOTICE_LENGTH } from '../../shared/lobbyNotices.js'
 
 function styleOverlay(el) {
   screenBackdrop(el)
@@ -12,7 +13,8 @@ function styleOverlay(el) {
   el.style.justifyContent = 'flex-start'
 }
 
-export function showLobby({ onJoin, onStart, defaultServerAddress = '' }) {
+export function showLobby({ onJoin, onStart, onSendNotice, defaultServerAddress = '' }) {
+  let isHostView = false
   const overlay = document.createElement('div')
   styleOverlay(overlay)
 
@@ -175,6 +177,125 @@ export function showLobby({ onJoin, onStart, defaultServerAddress = '' }) {
   startButton.style.display = 'none'
   overlay.appendChild(startButton)
 
+  // The host's notice board. Below the start button on purpose: the same
+  // above-the-fold reasoning as the research card - nothing here may push
+  // "Iniciar Partida" off a laptop screen.
+  const board = document.createElement('div')
+  board.style.display = 'none'
+  board.style.flexDirection = 'column'
+  board.style.gap = '0.5rem'
+  board.style.width = 'min(34rem, 88vw)'
+  board.style.marginTop = '0.4rem'
+  board.style.background = 'rgba(255,255,255,0.06)'
+  board.style.border = '1px solid #2f3b4c'
+  board.style.borderRadius = '10px'
+  board.style.padding = '0.9rem 1.1rem'
+
+  const boardTitle = document.createElement('div')
+  boardTitle.textContent = 'Recados do mestre'
+  boardTitle.style.color = '#8fd3ff'
+  boardTitle.style.textTransform = 'uppercase'
+  boardTitle.style.letterSpacing = '0.08em'
+  boardTitle.style.fontSize = '0.78rem'
+  board.appendChild(boardTitle)
+
+  const noticeList = document.createElement('div')
+  noticeList.style.display = 'flex'
+  noticeList.style.flexDirection = 'column'
+  noticeList.style.gap = '0.4rem'
+  noticeList.style.maxHeight = '11rem'
+  noticeList.style.overflowY = 'auto'
+  board.appendChild(noticeList)
+
+  const emptyNote = document.createElement('div')
+  emptyNote.style.color = '#78899d'
+  emptyNote.style.fontSize = '0.85rem'
+  board.appendChild(emptyNote)
+
+  // Only the host gets the composer; the server rejects a notice from anyone
+  // else, so showing the box to a guest would be an empty promise.
+  const composer = document.createElement('div')
+  composer.style.display = 'none'
+  composer.style.gap = '0.5rem'
+  composer.style.marginTop = '0.2rem'
+
+  const noticeInput = document.createElement('textarea')
+  noticeInput.placeholder = 'Ex: comecem pelas tarefas da Elétrica'
+  noticeInput.rows = 2
+  noticeInput.maxLength = MAX_NOTICE_LENGTH
+  textInput(noticeInput)
+  noticeInput.style.flex = '1'
+  noticeInput.style.resize = 'vertical'
+  noticeInput.style.fontFamily = 'inherit'
+  composer.appendChild(noticeInput)
+
+  const sendButton = document.createElement('button')
+  sendButton.textContent = 'Enviar'
+  primaryButton(sendButton)
+  sendButton.style.minWidth = '6rem'
+  sendButton.style.alignSelf = 'stretch'
+  composer.appendChild(sendButton)
+  board.appendChild(composer)
+
+  overlay.appendChild(board)
+
+  function renderEmptyState() {
+    const hasNotices = noticeList.childElementCount > 0
+    emptyNote.style.display = hasNotices ? 'none' : 'block'
+    emptyNote.textContent = isHostView
+      ? 'Escreva uma indicação e todo mundo na sala verá.'
+      : 'O mestre ainda não deixou nenhum recado.'
+  }
+
+  function appendNotice(notice) {
+    const row = document.createElement('div')
+    row.style.background = 'rgba(0,0,0,0.25)'
+    row.style.borderLeft = '3px solid #8fd3ff'
+    row.style.borderRadius = '6px'
+    row.style.padding = '0.45rem 0.7rem'
+
+    const text = document.createElement('div')
+    // textContent, never innerHTML: this is text another player typed.
+    text.textContent = notice.text
+    text.style.whiteSpace = 'pre-wrap'
+    text.style.wordBreak = 'break-word'
+    row.appendChild(text)
+
+    if (notice.at) {
+      const time = document.createElement('div')
+      time.textContent = new Date(notice.at).toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      time.style.color = '#78899d'
+      time.style.fontSize = '0.72rem'
+      time.style.marginTop = '0.15rem'
+      row.appendChild(time)
+    }
+
+    noticeList.appendChild(row)
+    noticeList.scrollTop = noticeList.scrollHeight
+    renderEmptyState()
+  }
+
+  function sendNotice() {
+    const text = noticeInput.value.trim()
+    if (!text) return
+    onSendNotice?.(text)
+    noticeInput.value = ''
+    noticeInput.focus()
+  }
+
+  sendButton.addEventListener('click', sendNotice)
+  noticeInput.addEventListener('keydown', (event) => {
+    // Enter sends, Shift+Enter breaks the line - the shape everyone already
+    // knows from every chat box.
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      sendNotice()
+    }
+  })
+
   // The research card goes LAST, below the actions. It used to sit above
   // them, and on a laptop screen that pushed "Iniciar Partida" below the
   // fold: you answered the question and nothing appeared to happen, because
@@ -267,8 +388,23 @@ export function showLobby({ onJoin, onStart, defaultServerAddress = '' }) {
       }
     },
     setIsHost(isHost) {
+      isHostView = isHost
       startButton.style.display = isHost ? 'block' : 'none'
       settings.style.display = isHost ? 'flex' : 'none'
+      composer.style.display = isHost ? 'flex' : 'none'
+      // Once connected the board is always up: the host needs somewhere to
+      // type, and a guest needs to know the board exists before anything has
+      // been posted to it.
+      board.style.display = 'flex'
+      renderEmptyState()
+    },
+    addNotice(notice) {
+      appendNotice(notice)
+    },
+    setNotices(notices) {
+      noticeList.innerHTML = ''
+      for (const notice of notices ?? []) appendNotice(notice)
+      renderEmptyState()
     },
     getImpostorCount() {
       return Number(impostorSelect.value)

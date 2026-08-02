@@ -457,9 +457,16 @@ function connect(url, name, lobby) {
     // Connected: the name/host/join controls have done their job, so the
     // lobby becomes the waiting room rather than a form nobody can use again.
     lobby.setConnected()
+    // Whatever the host already posted, so a late arrival reads the
+    // briefing instead of an empty board.
+    lobby.setNotices(msg.notices)
     roster.clear()
     for (const entry of msg.players) roster.set(entry.id, entry)
     updateLobbyRoster(lobby)
+  })
+
+  netClient.on(MESSAGE_TYPE.LOBBY_NOTICE, (msg) => {
+    lobby.addNotice({ text: msg.text, at: msg.at })
   })
 
   netClient.on(MESSAGE_TYPE.PLAYER_JOINED, (msg) => {
@@ -836,6 +843,9 @@ const lobby = showLobby({
   },
   onStart(impostorCount) {
     netClient.send(MESSAGE_TYPE.START, { impostorCount })
+  },
+  onSendNotice(text) {
+    netClient?.send(MESSAGE_TYPE.LOBBY_NOTICE, { text })
   },
 })
 
