@@ -412,11 +412,22 @@ function connect(url, name, lobby) {
 
   netClient.on(MESSAGE_TYPE.PLAYER_HURT, (msg) => {
     remotePlayers.setHealth(msg.id, msg.health)
-    if (msg.id !== localPlayerId) return
-    // Only the victim gets the screen flash - it is damage feedback, not a
-    // broadcast event.
-    healthUI.hit(msg.health)
-    sfx.kill()
+
+    if (msg.id === localPlayerId) {
+      // Being hit: the red vignette and the drop in your own hearts.
+      healthUI.hit(msg.health)
+      sfx.kill()
+      return
+    }
+
+    // Landing a hit. Without this the attacker got no feedback at all - the
+    // only thing that changed was the victim's hearts, which sit above their
+    // head behind the crosshair - so a working attack was indistinguishable
+    // from a key that does nothing.
+    if (msg.attackerId === localPlayerId) {
+      healthUI.enemyHit(msg.health)
+      sfx.taskProgress()
+    }
   })
 
   netClient.on(MESSAGE_TYPE.PLAYER_DIED, (msg) => {
