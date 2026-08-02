@@ -9,22 +9,24 @@ const FLOOR_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x445566 })
 const WALL_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x8899aa })
 const INTERACTABLE_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xffcc00 })
 
-function directionToSide(fromCenter, toCenter) {
-  const dx = toCenter[0] - fromCenter[0]
-  const dz = toCenter[2] - fromCenter[2]
-  if (Math.abs(dx) >= Math.abs(dz)) {
-    return dx > 0 ? 'east' : 'west'
-  }
-  return dz > 0 ? 'north' : 'south'
-}
-
-function boxEdgePoint(room, ux, uz) {
+// Returns where the straight line from `room` to `other` crosses room's own
+// boundary: which wall it exits through, and the coordinate along that wall.
+// Shared by wall-gap placement and corridor placement so both always agree.
+function computeEdge(room, other) {
+  const dx = other.center[0] - room.center[0]
+  const dz = other.center[2] - room.center[2]
+  const distance = Math.hypot(dx, dz)
+  const ux = dx / distance
+  const uz = dz / distance
   const halfWidth = room.size[0] / 2
   const halfDepth = room.size[2] / 2
   const tx = ux !== 0 ? halfWidth / Math.abs(ux) : Infinity
   const tz = uz !== 0 ? halfDepth / Math.abs(uz) : Infinity
   const t = Math.min(tx, tz)
-  return [room.center[0] + ux * t, room.center[2] + uz * t]
+  const point = [room.center[0] + ux * t, room.center[2] + uz * t]
+  const side = tx <= tz ? (ux > 0 ? 'east' : 'west') : uz > 0 ? 'north' : 'south'
+  const coord = side === 'north' || side === 'south' ? point[0] : point[1]
+  return { side, coord, point }
 }
 
 function addFloorSlab(group, centerX, centerZ, width, depth) {
@@ -34,50 +36,66 @@ function addFloorSlab(group, centerX, centerZ, width, depth) {
   group.add(mesh)
 }
 
+// Builds a wall as solid segments spanning [rangeStart, rangeEnd] along the
+// given axis, leaving a CORRIDOR_WIDTH-wide gap centered at each entry in
+// gapCoords (overlapping gaps merge naturally since segments are computed
+// from a sorted sweep, not built independently per connection).
+function buildWallWithGaps(group, fixedCoord, rangeStart, rangeEnd, height, gapCoords, axis) {
+  const sortedGaps = [...gapCoords].sort((a, b) => a - b)
+  const segments = []
+  let cursor = rangeStart
+
+  for (const gapCenter of sortedGaps) {
+    const gapStart = Math.max(rangeStart, gapCenter - CORRIDOR_WIDTH / 2)
+    const gapEnd = Math.min(rangeEnd, gapCenter + CORRIDOR_WIDTH / 2)
+    if (gapStart > cursor) segments.push([cursor, gapStart])
+    cursor = Math.max(cursor, gapEnd)
+  }
+  if (cursor < rangeEnd) segments.push([cursor, rangeEnd])
+
+  for (const [start, end] of segments) {
+    const length = end - start
+    if (length <= 0.01) continue
+    const center = (start + end) / 2
+    const geometry =
+      axis === 'x'
+        ? new THREE.BoxGeometry(length, height, WALL_THICKNESS)
+        : new THREE.BoxGeometry(WALL_THICKNESS, height, length)
+    const mesh = new THREE.Mesh(geometry, WALL_MATERIAL)
+    if (axis === 'x') {
+      mesh.position.set(center, height / 2, fixedCoord)
+    } else {
+      mesh.position.set(fixedCoord, height / 2, center)
+    }
+    group.add(mesh)
+  }
+}
+
 function buildRoom(group, room) {
   const [width, height, depth] = room.size
   const [cx, , cz] = room.center
 
   addFloorSlab(group, cx, cz, width, depth)
 
-  const openSides = new Set(
-    room.connections.map((id) => {
-      const other = ROOM_LAYOUT.find((r) => r.id === id)
-      return directionToSide(room.center, other.center)
-    })
-  )
+  const gapsBySide = { north: [], south: [], east: [], west: [] }
+  for (const connectionId of room.connections) {
+    const other = ROOM_LAYOUT.find((r) => r.id === connectionId)
+    const { side, coord } = computeEdge(room, other)
+    gapsBySide[side].push(coord)
+  }
 
-  if (!openSides.has('north')) {
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(width, height, WALL_THICKNESS), WALL_MATERIAL)
-    wall.position.set(cx, height / 2, cz + depth / 2)
-    group.add(wall)
-  }
-  if (!openSides.has('south')) {
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(width, height, WALL_THICKNESS), WALL_MATERIAL)
-    wall.position.set(cx, height / 2, cz - depth / 2)
-    group.add(wall)
-  }
-  if (!openSides.has('east')) {
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(WALL_THICKNESS, height, depth), WALL_MATERIAL)
-    wall.position.set(cx + width / 2, height / 2, cz)
-    group.add(wall)
-  }
-  if (!openSides.has('west')) {
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(WALL_THICKNESS, height, depth), WALL_MATERIAL)
-    wall.position.set(cx - width / 2, height / 2, cz)
-    group.add(wall)
-  }
+  buildWallWithGaps(group, cz + depth / 2, cx - width / 2, cx + width / 2, height, gapsBySide.north, 'x')
+  buildWallWithGaps(group, cz - depth / 2, cx - width / 2, cx + width / 2, height, gapsBySide.south, 'x')
+  buildWallWithGaps(group, cx + width / 2, cz - depth / 2, cz + depth / 2, height, gapsBySide.east, 'z')
+  buildWallWithGaps(group, cx - width / 2, cz - depth / 2, cz + depth / 2, height, gapsBySide.west, 'z')
 }
 
 function buildCorridor(group, roomA, roomB) {
   const dx = roomB.center[0] - roomA.center[0]
   const dz = roomB.center[2] - roomA.center[2]
-  const distance = Math.hypot(dx, dz)
-  const ux = dx / distance
-  const uz = dz / distance
 
-  const [ax, az] = boxEdgePoint(roomA, ux, uz)
-  const [bx, bz] = boxEdgePoint(roomB, -ux, -uz)
+  const [ax, az] = computeEdge(roomA, roomB).point
+  const [bx, bz] = computeEdge(roomB, roomA).point
   const corridorLength = Math.hypot(bx - ax, bz - az)
   const midX = (ax + bx) / 2
   const midZ = (az + bz) / 2

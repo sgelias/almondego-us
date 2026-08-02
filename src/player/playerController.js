@@ -5,12 +5,16 @@ import { normalizeMovementVector, clampPitch } from './movementMath.js'
 const GRAVITY = 30
 const PLAYER_RADIUS = 0.35
 const PLAYER_SEGMENT_HEIGHT = 1.0
-const WALK_SPEED = 5
+// This feeds an exponential-damping model (see updatePhysics), so it behaves
+// as an acceleration, not a top speed: terminal velocity converges to
+// roughly WALK_ACCELERATION / 4. ~20 gives a moderate walk around 5 u/s.
+const WALK_ACCELERATION = 20
 const SPRINT_MULTIPLIER = 1.6
 const MOUSE_SENSITIVITY = 0.0025
 const STEPS_PER_FRAME = 5
 const HEAD_BOB_FREQUENCY = 10
 const HEAD_BOB_AMPLITUDE = 0.04
+const FALL_RESPAWN_Y = -10
 
 export function createPlayerController(camera, worldOctree, spawnPoint) {
   const playerCollider = new Capsule(
@@ -52,8 +56,8 @@ export function createPlayerController(camera, worldOctree, spawnPoint) {
     const { forward, right } = normalizeMovementVector(forwardInput, rightInput)
 
     const isSprinting = Boolean(keyStates['ShiftLeft'] || keyStates['ShiftRight'])
-    const speed = WALK_SPEED * (isSprinting ? SPRINT_MULTIPLIER : 1)
-    const speedDelta = delta * speed * (playerOnFloor ? 1 : 0.5)
+    const acceleration = WALK_ACCELERATION * (isSprinting ? SPRINT_MULTIPLIER : 1)
+    const speedDelta = delta * acceleration * (playerOnFloor ? 1 : 0.5)
 
     if (forward !== 0) {
       playerVelocity.addScaledVector(getForwardVector(), forward * speedDelta)
@@ -76,6 +80,14 @@ export function createPlayerController(camera, worldOctree, spawnPoint) {
     playerCollisions()
   }
 
+  function teleportPlayerIfOob() {
+    if (playerCollider.end.y < FALL_RESPAWN_Y) {
+      playerCollider.start.set(spawnPoint.x, spawnPoint.y, spawnPoint.z)
+      playerCollider.end.set(spawnPoint.x, spawnPoint.y + PLAYER_SEGMENT_HEIGHT, spawnPoint.z)
+      playerVelocity.set(0, 0, 0)
+    }
+  }
+
   function applyHeadBob(delta, isMoving) {
     if (isMoving && playerOnFloor) {
       headBobTime += delta * HEAD_BOB_FREQUENCY
@@ -93,6 +105,7 @@ export function createPlayerController(camera, worldOctree, spawnPoint) {
       for (let i = 0; i < STEPS_PER_FRAME; i += 1) {
         controls(subDelta)
         updatePhysics(subDelta)
+        teleportPlayerIfOob()
       }
 
       const forwardInput = (keyStates['KeyW'] ? 1 : 0) - (keyStates['KeyS'] ? 1 : 0)

@@ -25,6 +25,9 @@ scene.add(dirLight)
 const { group: mapGroup, spawnPoint, interactables } = buildSkeldMap()
 scene.add(mapGroup)
 
+// Corridors are rotated Object3D children; force world matrices to be
+// current before the octree reads them, so collision matches what renders.
+mapGroup.updateMatrixWorld(true)
 const worldOctree = buildWorldOctree(mapGroup)
 const player = createPlayerController(camera, worldOctree, spawnPoint)
 const interactSystem = createInteractSystem(camera, interactables)
