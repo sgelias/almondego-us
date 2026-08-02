@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-// The classic Among Us crewmate palette.
+// The classic crewmate palette.
 export const CREW_COLORS = [
   0xc51111, 0x132ed1, 0x117f2d, 0xed54ba, 0xef7d0d, 0xf5f557,
   0x3f474e, 0xd6e0f0, 0x6b2fbb, 0x71491e, 0x38fedc, 0x50ef39,

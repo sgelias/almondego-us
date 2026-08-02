@@ -124,8 +124,13 @@ function startMatch(socket) {
   botRunner.stop()
 
   // Drop any bots left over from a previous match before counting humans.
+  // Broadcasting the removal matters for "play again": without it every
+  // client keeps last round's bots in its roster forever and the list grows
+  // by five each restart.
   for (const [id, player] of [...players]) {
-    if (player.isBot) players.delete(id)
+    if (!player.isBot) continue
+    players.delete(id)
+    broadcastToAll(MESSAGE_TYPE.PLAYER_LEFT, { id })
   }
 
   if (players.size < MIN_PLAYERS_TO_START) {
@@ -241,5 +246,5 @@ wss.on('connection', (socket) => {
   })
 })
 
-console.log(`Among Us: First Person relay server listening at ws://${getLanAddress()}:${PORT}`)
-console.log(`Host: open the game and click "Host & Join". Others: use the address above.`)
+console.log(`AlmondegoUs — servidor de partida ouvindo em ws://${getLanAddress()}:${PORT}`)
+console.log(`Anfitrião: abra o jogo e clique em "Hospedar e Entrar". Os outros: usem o endereço acima.`)

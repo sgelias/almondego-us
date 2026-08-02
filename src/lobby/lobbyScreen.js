@@ -1,50 +1,100 @@
+import { crewmateSvg, crewmateRow } from '../ui/crewmateIcon.js'
+import { PANEL, primaryButton, secondaryButton, textInput, screenBackdrop } from '../ui/theme.js'
+
 function styleOverlay(el) {
-  el.style.position = 'fixed'
-  el.style.inset = '0'
-  el.style.display = 'flex'
-  el.style.flexDirection = 'column'
-  el.style.alignItems = 'center'
-  el.style.justifyContent = 'center'
-  el.style.gap = '0.75rem'
-  el.style.background = 'rgba(10, 12, 16, 0.95)'
-  el.style.color = '#fff'
-  el.style.fontFamily = 'sans-serif'
+  screenBackdrop(el)
   el.style.zIndex = '10'
+  el.style.overflowY = 'auto'
+  el.style.padding = '2rem 1rem'
 }
 
 export function showLobby({ onHostAndJoin, onJoin, onStart }) {
   const overlay = document.createElement('div')
   styleOverlay(overlay)
 
+  // A row of crewmates over the title, purely to set the tone before the
+  // player has seen a single one in 3D.
+  const parade = document.createElement('div')
+  parade.style.display = 'flex'
+  parade.style.gap = '0.35rem'
+  parade.style.marginBottom = '0.2rem'
+  for (let i = 0; i < 6; i += 1) {
+    const icon = crewmateSvg(i, 40)
+    icon.style.transform = `translateY(${i % 2 ? 6 : 0}px)`
+    parade.appendChild(icon)
+  }
+  overlay.appendChild(parade)
+
   const title = document.createElement('h1')
-  title.textContent = 'Among Us: Primeira Pessoa'
+  title.textContent = 'AlmondegoUs'
+  title.style.margin = '0'
+  title.style.fontSize = 'clamp(1.6rem, 5vw, 2.6rem)'
+  title.style.letterSpacing = '0.02em'
+  title.style.textAlign = 'center'
   overlay.appendChild(title)
+
+  const subtitle = document.createElement('p')
+  subtitle.textContent = 'Cumpra suas tarefas. Descubra o impostor. Ou seja ele.'
+  subtitle.style.margin = '0 0 0.4rem'
+  subtitle.style.color = '#9fb0c4'
+  subtitle.style.textAlign = 'center'
+  overlay.appendChild(subtitle)
+
+  const panel = document.createElement('div')
+  PANEL(panel)
+  overlay.appendChild(panel)
 
   const nameInput = document.createElement('input')
   nameInput.type = 'text'
   nameInput.placeholder = 'Seu nome'
-  overlay.appendChild(nameInput)
+  textInput(nameInput)
+  panel.appendChild(nameInput)
 
   const hostButton = document.createElement('button')
   hostButton.textContent = 'Hospedar e Entrar'
-  overlay.appendChild(hostButton)
+  primaryButton(hostButton)
+  panel.appendChild(hostButton)
 
-  const joinRow = document.createElement('div')
+  const divider = document.createElement('div')
+  divider.textContent = 'ou entre numa partida existente'
+  divider.style.textAlign = 'center'
+  divider.style.color = '#78899d'
+  divider.style.fontSize = '0.82rem'
+  divider.style.margin = '0.5rem 0 0.1rem'
+  panel.appendChild(divider)
+
   const addressInput = document.createElement('input')
   addressInput.type = 'text'
   addressInput.placeholder = 'Endereço do host (ex: 192.168.1.10:8080)'
+  textInput(addressInput)
+  panel.appendChild(addressInput)
+
   const joinButton = document.createElement('button')
   joinButton.textContent = 'Entrar'
-  joinRow.appendChild(addressInput)
-  joinRow.appendChild(joinButton)
-  overlay.appendChild(joinRow)
+  secondaryButton(joinButton)
+  panel.appendChild(joinButton)
 
   const errorMessage = document.createElement('div')
   errorMessage.style.color = '#ff6b6b'
   errorMessage.style.display = 'none'
-  overlay.appendChild(errorMessage)
+  errorMessage.style.marginTop = '0.5rem'
+  errorMessage.style.textAlign = 'center'
+  panel.appendChild(errorMessage)
 
-  const playerList = document.createElement('ul')
+  const playersTitle = document.createElement('div')
+  playersTitle.style.color = '#8fd3ff'
+  playersTitle.style.textTransform = 'uppercase'
+  playersTitle.style.letterSpacing = '0.1em'
+  playersTitle.style.fontSize = '0.78rem'
+  playersTitle.style.display = 'none'
+  overlay.appendChild(playersTitle)
+
+  const playerList = document.createElement('div')
+  playerList.style.display = 'flex'
+  playerList.style.flexWrap = 'wrap'
+  playerList.style.justifyContent = 'center'
+  playerList.style.gap = '0.5rem 1.1rem'
+  playerList.style.maxWidth = 'min(34rem, 88vw)'
   overlay.appendChild(playerList)
 
   // The research challenge lives here rather than on an in-match console:
@@ -146,14 +196,17 @@ export function showLobby({ onHostAndJoin, onJoin, onStart }) {
 
     setPlayers(players) {
       playerList.innerHTML = ''
+      playersTitle.textContent = `Na sala (${players.length})`
+      playersTitle.style.display = players.length ? 'block' : 'none'
       for (const player of players) {
-        const item = document.createElement('li')
-        item.textContent = player.name
-        playerList.appendChild(item)
+        playerList.appendChild(crewmateRow(player.name, player.colorIndex, { size: 30 }))
       }
     },
     setIsHost(isHost) {
       startButton.style.display = isHost ? 'block' : 'none'
+    },
+    setConnected() {
+      panel.style.display = 'none'
     },
     showConnectionError(message) {
       errorMessage.textContent = message

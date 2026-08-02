@@ -1,15 +1,55 @@
+import { crewmateSvg } from '../ui/crewmateIcon.js'
+import { COLORS, screenBackdrop, sectionLabel, secondaryButton, createCountdownBar } from '../ui/theme.js'
+
 function styleOverlay(el) {
-  el.style.position = 'fixed'
-  el.style.inset = '0'
-  el.style.display = 'flex'
-  el.style.flexDirection = 'column'
-  el.style.alignItems = 'center'
-  el.style.justifyContent = 'center'
-  el.style.gap = '0.75rem'
-  el.style.background = 'rgba(10, 12, 16, 0.95)'
-  el.style.color = '#fff'
-  el.style.fontFamily = 'sans-serif'
+  screenBackdrop(el)
   el.style.zIndex = '15'
+  el.style.padding = '2rem 1rem'
+  el.style.overflowY = 'auto'
+}
+
+// A clickable crewmate portrait. Used for every vote target so the child
+// picks a character, not a line of text.
+function voteCard(name, colorIndex, onPick) {
+  const card = document.createElement('button')
+  card.style.display = 'flex'
+  card.style.flexDirection = 'column'
+  card.style.alignItems = 'center'
+  card.style.gap = '0.35rem'
+  card.style.padding = '0.7rem 0.6rem'
+  card.style.width = '7.5rem'
+  card.style.borderRadius = '12px'
+  card.style.border = `2px solid ${COLORS.controlBorder}`
+  card.style.background = COLORS.control
+  card.style.color = COLORS.ink
+  card.style.cursor = 'pointer'
+  card.style.fontFamily = 'inherit'
+  card.style.fontWeight = '600'
+  card.addEventListener('mouseenter', () => {
+    if (!card.disabled) card.style.borderColor = COLORS.accent
+  })
+  card.addEventListener('mouseleave', () => {
+    if (!card.disabled) card.style.borderColor = COLORS.controlBorder
+  })
+
+  card.appendChild(crewmateSvg(colorIndex, 54))
+  const label = document.createElement('span')
+  label.textContent = name
+  label.style.fontSize = '0.9rem'
+  card.appendChild(label)
+
+  card.addEventListener('click', () => onPick(card))
+  return card
+}
+
+function cardGrid() {
+  const grid = document.createElement('div')
+  grid.style.display = 'flex'
+  grid.style.flexWrap = 'wrap'
+  grid.style.justifyContent = 'center'
+  grid.style.gap = '0.6rem'
+  grid.style.maxWidth = 'min(40rem, 92vw)'
+  return grid
 }
 
 export function createMeetingUI({ onVote }) {
@@ -18,39 +58,48 @@ export function createMeetingUI({ onVote }) {
   overlay.style.display = 'none'
   document.body.appendChild(overlay)
 
-  let countdownTimer = null
-
-  function clearCountdown() {
-    if (countdownTimer) {
-      clearInterval(countdownTimer)
-      countdownTimer = null
-    }
-  }
-
-  function renderCountdown(label, seconds) {
-    const timerLine = document.createElement('div')
-    let remaining = seconds
-    timerLine.textContent = `${label} (${remaining}s)`
-    overlay.appendChild(timerLine)
-
-    clearCountdown()
-    countdownTimer = setInterval(() => {
-      remaining = Math.max(0, remaining - 1)
-      timerLine.textContent = `${label} (${remaining}s)`
-      if (remaining === 0) clearCountdown()
-    }, 1000)
+  function reset(labelText) {
+    overlay.innerHTML = ''
+    overlay.style.display = 'flex'
+    const label = document.createElement('div')
+    label.textContent = labelText
+    sectionLabel(label)
+    overlay.appendChild(label)
   }
 
   return {
-    showDiscussion(seconds) {
-      overlay.innerHTML = ''
-      overlay.style.display = 'flex'
+    showDiscussion(seconds, livingPlayers = []) {
+      reset('Reunião de emergência')
 
       const title = document.createElement('h1')
-      title.textContent = 'Reunião de Emergência'
+      title.textContent = 'Quem é o impostor?'
+      title.style.margin = '0.1rem 0 0.2rem'
+      title.style.textAlign = 'center'
       overlay.appendChild(title)
 
-      renderCountdown('Discussão', seconds)
+      const hint = document.createElement('div')
+      hint.textContent = 'Discussão — a votação começa em instantes'
+      hint.style.color = COLORS.muted
+      overlay.appendChild(hint)
+
+      overlay.appendChild(createCountdownBar(seconds))
+
+      const grid = cardGrid()
+      for (const player of livingPlayers) {
+        const card = document.createElement('div')
+        card.style.display = 'flex'
+        card.style.flexDirection = 'column'
+        card.style.alignItems = 'center'
+        card.style.gap = '0.3rem'
+        card.style.width = '6rem'
+        card.appendChild(crewmateSvg(player.colorIndex, 46))
+        const name = document.createElement('span')
+        name.textContent = player.name
+        name.style.fontSize = '0.85rem'
+        card.appendChild(name)
+        grid.appendChild(card)
+      }
+      overlay.appendChild(grid)
     },
 
     // canVote is false for dead players. The server already rejects their
@@ -58,70 +107,101 @@ export function createMeetingUI({ onVote }) {
     // visibly "accepted" a vote which was then silently dropped - the client
     // lying to its own player (same class of bug as STATE.md L-008).
     showVoting(livingPlayers, seconds, canVote) {
-      overlay.innerHTML = ''
-      overlay.style.display = 'flex'
+      reset('Votação')
 
       const title = document.createElement('h1')
-      title.textContent = 'Votação'
+      title.textContent = canVote ? 'Em quem você vota?' : 'Votação em andamento'
+      title.style.margin = '0.1rem 0 0.2rem'
+      title.style.textAlign = 'center'
       overlay.appendChild(title)
-
-      renderCountdown('Votação termina em', seconds)
 
       if (!canVote) {
         const notice = document.createElement('div')
         notice.textContent = 'Você está morto e não pode votar.'
-        notice.style.color = '#ff6b6b'
-        notice.style.marginBottom = '0.5rem'
+        notice.style.color = COLORS.danger
+        notice.style.fontWeight = '600'
         overlay.appendChild(notice)
+      }
 
+      overlay.appendChild(createCountdownBar(seconds))
+
+      const grid = cardGrid()
+      overlay.appendChild(grid)
+
+      if (!canVote) {
         for (const player of livingPlayers) {
-          const row = document.createElement('div')
-          row.textContent = player.name
-          row.style.opacity = '0.55'
-          overlay.appendChild(row)
+          const card = document.createElement('div')
+          card.style.display = 'flex'
+          card.style.flexDirection = 'column'
+          card.style.alignItems = 'center'
+          card.style.gap = '0.3rem'
+          card.style.width = '6rem'
+          card.style.opacity = '0.5'
+          card.appendChild(crewmateSvg(player.colorIndex, 46))
+          const name = document.createElement('span')
+          name.textContent = player.name
+          name.style.fontSize = '0.85rem'
+          card.appendChild(name)
+          grid.appendChild(card)
         }
         return
       }
 
       let hasVoted = false
-      const buttons = []
+      const cards = []
 
-      function castVote(targetId) {
+      function castVote(targetId, chosen) {
         if (hasVoted) return
         hasVoted = true
-        for (const button of buttons) button.disabled = true
+        for (const card of cards) {
+          card.disabled = true
+          if (card !== chosen) card.style.opacity = '0.4'
+        }
+        chosen.style.borderColor = COLORS.good
         onVote(targetId)
       }
 
       for (const player of livingPlayers) {
-        const button = document.createElement('button')
-        button.textContent = player.name
-        button.addEventListener('click', () => castVote(player.id))
-        overlay.appendChild(button)
-        buttons.push(button)
+        const card = voteCard(player.name, player.colorIndex, (element) => castVote(player.id, element))
+        grid.appendChild(card)
+        cards.push(card)
       }
 
-      const skipButton = document.createElement('button')
-      skipButton.textContent = 'Pular'
-      skipButton.addEventListener('click', () => castVote('skip'))
-      overlay.appendChild(skipButton)
-      buttons.push(skipButton)
+      const skip = document.createElement('button')
+      skip.textContent = 'Pular voto'
+      secondaryButton(skip)
+      skip.style.marginTop = '0.7rem'
+      skip.addEventListener('click', () => castVote('skip', skip))
+      overlay.appendChild(skip)
+      cards.push(skip)
     },
 
-    showResult(ejectedName, wasImpostor) {
-      clearCountdown()
-      overlay.innerHTML = ''
-      overlay.style.display = 'flex'
+    showResult(ejectedName, ejectedColorIndex, wasImpostor) {
+      reset('Resultado')
+
+      if (ejectedName) {
+        const icon = crewmateSvg(ejectedColorIndex, 96, { dead: true })
+        icon.style.margin = '1.2rem 0'
+        overlay.appendChild(icon)
+      }
 
       const message = document.createElement('h1')
-      message.textContent = ejectedName
-        ? `${ejectedName} foi expulso (${wasImpostor ? 'Impostor' : 'não era o Impostor'})`
-        : 'Ninguém foi expulso'
+      message.textContent = ejectedName ? `${ejectedName} foi ejetado(a)` : 'Ninguém foi ejetado'
+      message.style.margin = '0.2rem 0'
+      message.style.textAlign = 'center'
       overlay.appendChild(message)
+
+      if (ejectedName) {
+        const verdict = document.createElement('div')
+        verdict.textContent = wasImpostor ? 'Era o impostor!' : 'Não era o impostor…'
+        verdict.style.color = wasImpostor ? COLORS.good : COLORS.danger
+        verdict.style.fontWeight = '700'
+        verdict.style.fontSize = '1.15rem'
+        overlay.appendChild(verdict)
+      }
     },
 
     hide() {
-      clearCountdown()
       overlay.style.display = 'none'
     },
   }

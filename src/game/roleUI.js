@@ -88,6 +88,16 @@ export function createRoleUI() {
       if (progressLine) progressLine.textContent = `${completed} / ${total} tarefas concluídas`
     },
 
+    // Clears the HUD between matches without destroying the elements - the
+    // next showRole() rebuilds their contents.
+    reset() {
+      roleBanner.style.display = 'none'
+      hud.style.display = 'none'
+      hud.innerHTML = ''
+      taskItemsById.clear()
+      progressLine = null
+    },
+
     hide() {
       roleBanner.remove()
       hud.remove()

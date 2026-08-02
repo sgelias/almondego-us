@@ -19,6 +19,8 @@ import { createMeetingUI } from './game/meetingUI.js'
 import { showGameOver } from './game/gameOverScreen.js'
 import { createVentTransition } from './ui/ventTransition.js'
 import { createSfx } from './audio/sfx.js'
+import { createMinimap } from './ui/minimap.js'
+import { CORRIDOR_WIDTH } from '../shared/skeldCorridors.js'
 import { MESSAGE_TYPE } from '../shared/protocol.js'
 import { TASK_LOCATIONS } from '../shared/taskPool.js'
 
@@ -136,6 +138,8 @@ const interactSystem = createInteractSystem(
 )
 
 const roleUI = createRoleUI()
+const minimap = createMinimap(ROOM_LAYOUT, SKELD_CORRIDORS, { corridorWidth: CORRIDOR_WIDTH })
+minimap.mount()
 const ventTransition = createVentTransition()
 
 window.addEventListener('resize', () => {
@@ -152,6 +156,9 @@ let gameEnded = false
 let localPlayerId = null
 let localRole = null
 let localAlive = true
+let isHost = false
+let deathNotice = null
+let gameOverScreen = null
 // Suppresses task interaction while a meeting is up or the game has ended.
 let interactionsPaused = false
 // taskId -> timestamp before which that console refuses to reopen, the cost
@@ -171,7 +178,9 @@ function updateLobbyRoster(lobby) {
 }
 
 function showDeathNotice() {
+  if (deathNotice) return
   const notice = document.createElement('div')
+  deathNotice = notice
   notice.textContent = 'Você morreu. Você ainda pode olhar ao redor, mas ninguém consegue te ver.'
   notice.style.position = 'fixed'
   notice.style.top = '1rem'
@@ -215,6 +224,16 @@ function openTaskQuiz(taskId) {
   })
 }
 
+// The server's livingPlayers payload carries id and name only; the colour
+// each player is drawn in lives in the roster, so the meeting screens are
+// enriched here rather than widening the protocol.
+function withColors(livingPlayers) {
+  return livingPlayers.map((entry) => ({
+    ...entry,
+    colorIndex: roster.get(entry.id)?.colorIndex,
+  }))
+}
+
 function handleInteractPress() {
   if (!started || gameEnded || !netClient || !localAlive) return
   if (interactionsPaused || taskQuiz.isOpen()) return
@@ -234,6 +253,12 @@ function handleInteractPress() {
 }
 
 document.addEventListener('keydown', (event) => {
+  if (event.code === 'Tab') {
+    // Tab moves focus by default, which would pull it out of the canvas.
+    event.preventDefault()
+    if (started) minimap.toggle()
+    return
+  }
   if (event.code === 'Escape') {
     taskQuiz.cancel()
     return
@@ -263,7 +288,11 @@ function connect(url, name, lobby) {
 
   netClient.on(MESSAGE_TYPE.WELCOME, (msg) => {
     localPlayerId = msg.playerId
+    isHost = msg.isHost
     lobby.setIsHost(msg.isHost)
+    // Connected: the name/host/join controls have done their job, so the
+    // lobby becomes the waiting room rather than a form nobody can use again.
+    lobby.setConnected()
     roster.clear()
     for (const entry of msg.players) roster.set(entry.id, entry)
     updateLobbyRoster(lobby)
@@ -321,17 +350,18 @@ function connect(url, name, lobby) {
     player.setFrozen(true)
     interactionsPaused = true
     taskQuiz.cancel()
+    minimap.hide()
     // Pointer lock captures the mouse for camera look, so the vote buttons
     // below would never receive a click while locked - release it here; the
     // pointer-lock overlay's own "click to resume" flow handles regaining it
     // once the meeting ends (browsers require a user gesture to re-lock).
     document.exitPointerLock()
     sfx.meeting()
-    meetingUI.showDiscussion(msg.discussionSeconds)
+    meetingUI.showDiscussion(msg.discussionSeconds, withColors(msg.livingPlayers))
     setTimeout(() => {
       // localAlive is read here, not when the meeting started, so a player
       // killed during the discussion phase still loses the vote.
-      if (!gameEnded) meetingUI.showVoting(msg.livingPlayers, msg.votingSeconds, localAlive)
+      if (!gameEnded) meetingUI.showVoting(withColors(msg.livingPlayers), msg.votingSeconds, localAlive)
     }, msg.discussionSeconds * 1000)
   })
 
@@ -345,7 +375,7 @@ function connect(url, name, lobby) {
     }
     if (msg.ejectedId) sfx.eject()
     const ejectedName = msg.ejectedId ? (roster.get(msg.ejectedId)?.name ?? 'Alguém') : null
-    meetingUI.showResult(ejectedName, msg.wasImpostor)
+    meetingUI.showResult(ejectedName, roster.get(msg.ejectedId)?.colorIndex, msg.wasImpostor)
     setTimeout(() => {
       if (!gameEnded) {
         meetingUI.hide()
@@ -366,7 +396,12 @@ function connect(url, name, lobby) {
     else sfx.lose()
     const impostorName =
       roster.get(msg.impostorId)?.name ?? (msg.impostorId === localPlayerId ? 'você' : 'Desconhecido')
-    showGameOver(msg.winner, impostorName)
+    gameOverScreen = showGameOver(msg.winner, impostorName, roster.get(msg.impostorId)?.colorIndex, {
+      // Only the host can start a match - the server rejects `start` from
+      // anyone else - so only the host gets the button.
+      canRestart: isHost,
+      onRestart: () => netClient.send(MESSAGE_TYPE.START, {}),
+    })
   })
 
   netClient.on(MESSAGE_TYPE.TELEPORT, (msg) => {
@@ -378,8 +413,42 @@ function connect(url, name, lobby) {
   })
 
   netClient.on(MESSAGE_TYPE.START, () => {
-    startGame(lobby)
+    // A second `start` means "play again". The 3D world, socket and input
+    // wiring are all still valid, so only the per-match state is torn down
+    // rather than re-running startGame (which would stack a second animate
+    // loop and duplicate every input listener - see STATE.md L-005).
+    if (started) resetForNewMatch()
+    else startGame(lobby)
   })
+}
+
+// Returns the client to a clean pre-match state so the same session can
+// play another round. Everything listed here is per-match state that would
+// otherwise leak into the new game: a stale "you are dead" banner, ghosts of
+// last round's avatars, completed-task ticks, console lockouts.
+function resetForNewMatch() {
+  gameEnded = false
+  localAlive = true
+  localRole = null
+  interactionsPaused = false
+
+  assignedTaskIds.clear()
+  completedTaskIds.clear()
+  taskLockoutUntil.clear()
+
+  for (const id of [...roster.keys()]) remotePlayers.remove(id)
+
+  taskQuiz.cancel()
+  minimap.hide()
+  meetingUI.hide()
+  roleUI.reset()
+  gameOverScreen?.remove()
+  gameOverScreen = null
+  deathNotice?.remove()
+  deathNotice = null
+
+  player.teleportTo([spawnPoint.x, spawnPoint.y, spawnPoint.z])
+  player.setFrozen(false)
 }
 
 function startGame(lobby) {
@@ -405,9 +474,15 @@ function startGame(lobby) {
     remotePlayers.update(deltaTime)
     // Visibility must be resolved before interactSystem raycasts, so a
     // player you cannot see is also not a valid kill target.
-    remotePlayers.applyVisibility((id, position) =>
-      navGraph.canSee(camera.position.x, camera.position.z, position.x, position.z, VISION_RADIUS)
-    )
+    const visibleOthers = []
+    remotePlayers.applyVisibility((id, position) => {
+      const seen = navGraph.canSee(camera.position.x, camera.position.z, position.x, position.z, VISION_RADIUS)
+      // The map is fed from this same pass rather than from the raw roster,
+      // so it can never reveal someone limited vision is hiding.
+      if (seen) visibleOthers.push({ x: position.x, z: position.z, colorIndex: roster.get(id)?.colorIndex })
+      return seen
+    })
+    minimap.render(camera.position, roster.get(localPlayerId)?.colorIndex, visibleOthers)
     interactSystem.update()
 
     stateSendAccumulator += deltaTime
