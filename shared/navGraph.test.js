@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { createNavGraph } from './navGraph.js'
 import { ROOM_LAYOUT } from './skeldRooms.js'
 import { SKELD_CORRIDORS } from './skeldCorridors.js'
+import { DECK_HEIGHT, deckAtY, deckFloorY } from './decks.js'
+import { SKELD_STAIRS, STAIR_WIDTH } from './skeldStairs.js'
 import { TASK_LOCATIONS } from './taskPool.js'
 
 const nav = createNavGraph(ROOM_LAYOUT, SKELD_CORRIDORS)
@@ -36,19 +38,52 @@ test('every consecutive pair in a room path is actually connected', () => {
 
 test('roomIdAt identifies a room interior and returns null in a corridor', () => {
   const cafeteria = ROOM_LAYOUT.find((r) => r.id === 'cafeteria')
-  assert.equal(nav.roomIdAt(cafeteria.center[0], cafeteria.center[2]), 'cafeteria')
+  assert.equal(nav.roomIdAt([cafeteria.center[0], 0, cafeteria.center[2]]), 'cafeteria')
   // Far outside every room footprint (the map's rooms all sit within |x|,|z| <= 40).
-  assert.equal(nav.roomIdAt(200, 200), null)
+  assert.equal(nav.roomIdAt([200, 0, 200]), null)
 })
 
 test('waypointsTo starts at the given position and ends at the destination offset', () => {
-  const start = [-11, 33] // cafeteria center
+  const start = [-11, 0, 33] // cafeteria center
   const points = nav.waypointsTo(start, 'electrical', [1, 0, 2])
   assert.ok(points)
   assert.deepEqual(points[0], start)
 
   const electrical = ROOM_LAYOUT.find((r) => r.id === 'electrical')
-  assert.deepEqual(points[points.length - 1], [electrical.center[0] + 1, electrical.center[2] + 2])
+  assert.deepEqual(points[points.length - 1], [electrical.center[0] + 1, 0, electrical.center[2] + 2])
+})
+
+test('a path to the upper deck actually climbs, and does so on a staircase', () => {
+  const points = nav.waypointsTo(nav.roomCenter('cafeteria'), 'laboratory', null)
+  assert.ok(points, 'no route from the spawn to the upper deck at all')
+  assert.equal(points[0][1], 0, 'the route does not start on the lower deck')
+  assert.equal(points[points.length - 1][1], DECK_HEIGHT, 'the route never reaches the upper deck')
+
+  // The climb must happen over a stair's footprint, not in the middle of a
+  // corridor: a route that simply gained height in open air would pass
+  // through the ceiling.
+  const rising = points.filter((point, i) => i > 0 && point[1] > points[i - 1][1])
+  assert.ok(rising.length > 1, 'the route jumps a whole deck in one step instead of walking up')
+  for (const [x, , z] of rising) {
+    const onAStair = SKELD_STAIRS.some(
+      (stair) =>
+        Math.abs(x - stair.x) < 3 && z >= Math.min(stair.foot, stair.top) - 1 && z <= Math.max(stair.foot, stair.top) + 1
+    )
+    assert.ok(onAStair, `the route gains height at ${x},${z}, which is not on any staircase`)
+  }
+})
+
+test('a floor is opaque: nobody sees between decks', () => {
+  // Two players on the same (x, z) one deck apart are zero units away
+  // horizontally, so every distance-based rule would call them visible.
+  assert.equal(nav.canSee([20, 1.35, 0], [20, DECK_HEIGHT + 1.35, 0], 20), false)
+  assert.equal(nav.canSee([0, DECK_HEIGHT + 1.35, 0], [0, 1.35, 0], 20), false)
+  // ...and vision within a deck still works.
+  const cafeteria = ROOM_LAYOUT.find((r) => r.id === 'cafeteria')
+  assert.equal(
+    nav.canSee([cafeteria.center[0], 1.35, cafeteria.center[2]], [cafeteria.center[0] + 2, 1.35, cafeteria.center[2]], 9),
+    true
+  )
 })
 
 test('every wall-crossing segment of a waypoint path is axis-aligned', () => {
@@ -83,10 +118,19 @@ test('waypointsTo produces no zero-length duplicate points', () => {
 // A point is legal for a walking bot if it is inside a room, or within half
 // the corridor width of some corridor centreline. Anything else is inside a
 // wall or out in the void.
-function isWalkable(x, z) {
-  if (nav.roomIdAt(x, z)) return true
+function isWalkable(x, y, z) {
+  if (nav.roomIdAt([x, y, z])) return true
+  // On a staircase: neither a room nor a corridor, but the one place a
+  // legal path is allowed to be between the two.
+  for (const stair of SKELD_STAIRS) {
+    const lo = Math.min(stair.foot, stair.top)
+    const hi = Math.max(stair.foot, stair.top)
+    if (Math.abs(x - stair.x) <= STAIR_WIDTH / 2 + 0.01 && z >= lo - 0.01 && z <= hi + 0.01) return true
+  }
+  const deck = deckAtY(y)
   const HALF = 2
   for (const corridor of SKELD_CORRIDORS) {
+    if ((corridor.deck ?? 0) !== deck) continue
     for (let i = 0; i < corridor.points.length - 1; i += 1) {
       const [ax, az] = corridor.points[i]
       const [bx, bz] = corridor.points[i + 1]
@@ -103,14 +147,18 @@ function isWalkable(x, z) {
 
 function assertPathWalkable(points, label) {
   for (let i = 0; i < points.length - 1; i += 1) {
-    const [x1, z1] = points[i]
-    const [x2, z2] = points[i + 1]
+    const [x1, y1, z1] = points[i]
+    const [x2, y2, z2] = points[i + 1]
     const steps = Math.max(2, Math.ceil(Math.hypot(x2 - x1, z2 - z1) * 4))
     for (let s = 0; s <= steps; s += 1) {
       const t = s / steps
       const x = x1 + (x2 - x1) * t
+      const y = y1 + (y2 - y1) * t
       const z = z1 + (z2 - z1) * t
-      assert.ok(isWalkable(x, z), `${label}: path leaves walkable space at ${x.toFixed(2)},${z.toFixed(2)}`)
+      assert.ok(
+        isWalkable(x, y, z),
+        `${label}: path leaves walkable space at ${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`
+      )
     }
   }
 }
@@ -137,7 +185,8 @@ test('a path starting mid-corridor walks the corridor out instead of cutting thr
         const x = ax + (bx - ax) * t
         const z = az + (bz - az) * t
         for (const target of ['cafeteria', 'reactor', 'navigation']) {
-          const points = nav.waypointsTo([x, z], target, null)
+          const deckY = deckFloorY(corridor.deck ?? 0)
+          const points = nav.waypointsTo([x, deckY, z], target, null)
           assert.ok(points, `no path from corridor ${corridor.roomAId}->${corridor.roomBId} to ${target}`)
           assertPathWalkable(points, `corridor ${corridor.roomAId}->${corridor.roomBId} @${t} -> ${target}`)
         }

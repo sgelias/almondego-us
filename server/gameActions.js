@@ -12,7 +12,13 @@ export const TELEPORT_EYE_HEIGHT = 1.35
 function ventPosition(ventId) {
   const vent = VENT_LOCATIONS.find((v) => v.id === ventId)
   const room = ROOM_LAYOUT.find((r) => r.id === vent.roomId)
-  return [room.center[0] + vent.offset[0], TELEPORT_EYE_HEIGHT, room.center[2] + vent.offset[2]]
+  // Eye height above THAT room's floor. Hardcoding 1.35 would drop anyone
+  // venting into an upper-deck room straight onto the deck below.
+  return [
+    room.center[0] + vent.offset[0],
+    room.center[1] + TELEPORT_EYE_HEIGHT,
+    room.center[2] + vent.offset[2],
+  ]
 }
 
 // Every in-match action, keyed on playerId rather than on a socket, so a

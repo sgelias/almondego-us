@@ -38,13 +38,19 @@ function segmentIntersectsRoom(x1, z1, x2, z2, room, corridorWidth) {
   return segXMin < b.xMax - EPSILON && b.xMin < segXMax - EPSILON && segZMin < b.zMax - EPSILON && b.zMin < segZMax - EPSILON
 }
 
-test('computeCorridors routes all 24 Skeld connections with no override', () => {
-  const corridors = computeCorridors(ROOM_LAYOUT, CORRIDOR_WIDTH)
-  assert.equal(corridors.length, 24)
+// The router is per deck (see skeldCorridors.js): rooms on another floor are
+// not obstacles. Feeding it the whole ship at once would have an upper-deck
+// laboratory blocking a corridor two floors below.
+const LOWER_DECK_ROOMS = ROOM_LAYOUT.filter((room) => (room.deck ?? 0) === 0)
+
+test('computeCorridors routes every lower-deck connection with no override', () => {
+  const expected = LOWER_DECK_ROOMS.reduce((total, room) => total + room.connections.length, 0) / 2
+  const corridors = computeCorridors(LOWER_DECK_ROOMS, CORRIDOR_WIDTH)
+  assert.equal(corridors.length, expected)
 })
 
 test('every corridor waypoint pair is axis-aligned (shares an x or a z)', () => {
-  const corridors = computeCorridors(ROOM_LAYOUT, CORRIDOR_WIDTH)
+  const corridors = computeCorridors(LOWER_DECK_ROOMS, CORRIDOR_WIDTH)
   for (const corridor of corridors) {
     for (let i = 0; i < corridor.points.length - 1; i += 1) {
       const [x1, z1] = corridor.points[i]
@@ -55,10 +61,10 @@ test('every corridor waypoint pair is axis-aligned (shares an x or a z)', () => 
 })
 
 test('every corridor starts and ends exactly on its room boundary', () => {
-  const corridors = computeCorridors(ROOM_LAYOUT, CORRIDOR_WIDTH)
+  const corridors = computeCorridors(LOWER_DECK_ROOMS, CORRIDOR_WIDTH)
   for (const corridor of corridors) {
-    const roomA = ROOM_LAYOUT.find((r) => r.id === corridor.roomAId)
-    const roomB = ROOM_LAYOUT.find((r) => r.id === corridor.roomBId)
+    const roomA = LOWER_DECK_ROOMS.find((r) => r.id === corridor.roomAId)
+    const roomB = LOWER_DECK_ROOMS.find((r) => r.id === corridor.roomBId)
     const first = corridor.points[0]
     const last = corridor.points[corridor.points.length - 1]
     assert.ok(onBoundary(first, roomA), `${corridor.roomAId}->${corridor.roomBId} start not on ${roomA.id}'s boundary`)
@@ -67,9 +73,12 @@ test('every corridor starts and ends exactly on its room boundary', () => {
 })
 
 test('no corridor segment clips a room other than its own two endpoints', () => {
-  const corridors = computeCorridors(ROOM_LAYOUT, CORRIDOR_WIDTH)
+  const corridors = computeCorridors(LOWER_DECK_ROOMS, CORRIDOR_WIDTH)
   for (const corridor of corridors) {
-    const others = ROOM_LAYOUT.filter((r) => r.id !== corridor.roomAId && r.id !== corridor.roomBId)
+    // Only rooms on the same deck can be clipped. A laboratory seven metres
+    // overhead shares an (x, z) footprint with plenty of lower corridors and
+    // is in the way of none of them.
+    const others = LOWER_DECK_ROOMS.filter((r) => r.id !== corridor.roomAId && r.id !== corridor.roomBId)
     for (let i = 0; i < corridor.points.length - 1; i += 1) {
       const [x1, z1] = corridor.points[i]
       const [x2, z2] = corridor.points[i + 1]

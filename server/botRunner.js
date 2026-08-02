@@ -3,6 +3,7 @@ import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
 import { SKELD_CORRIDORS } from '../shared/skeldCorridors.js'
 import { TASK_LOCATIONS, getTaskById } from '../shared/taskPool.js'
 import { VENT_LOCATIONS } from '../shared/ventPool.js'
+import { deckAtY } from '../shared/decks.js'
 import { getSpellById } from '../shared/spellPool.js'
 import { getPanel } from '../shared/eventPool.js'
 import { createBotBrain } from './botBrain.js'
@@ -14,6 +15,12 @@ const TICK_MS = 1000 / TICK_HZ
 // WALK_ACCELERATION note - terminal velocity lands around 5 u/s), so bot
 // motion doesn't read as obviously faster or slower than a real player's.
 const WALK_SPEED = 4.5
+// bot.position is a FLOOR-level coordinate: y is the surface the bot is
+// standing on, which is 0 on the lower deck, DECK_HEIGHT on the upper one,
+// and somewhere between the two on a staircase. Eye height is added only
+// when broadcasting, because that is the convention the wire and the client
+// use. Keeping the two apart matters: the y a bot walks on is the same y the
+// map's waypoints are built from, so deck lookups agree with the geometry.
 const EYE_HEIGHT = 1.35
 
 // How far a bot can "see". Also the radius used to decide who witnessed a
@@ -23,6 +30,19 @@ const SENSE_RADIUS = 9
 // walking near you. An attack now needs the impostor genuinely on top of
 // its target, and it takes MAX_HEALTH of them.
 const ATTACK_RANGE = 1.4
+
+// Bots store a floor coordinate; humans report an eye coordinate. Every
+// comparison between the two has to agree on one convention, and eye height
+// is the one already on the wire - so a bot's position is lifted here rather
+// than a human's being lowered somewhere else.
+//
+// This is not pedantry. Halfway up a staircase the two conventions are 1.35
+// apart, which is enough to put a bot and a human standing on the same step
+// on opposite sides of the deck boundary - mutually invisible, one of them
+// holding a knife.
+function eyeOf(floorPosition) {
+  return [floorPosition[0], floorPosition[1] + EYE_HEIGHT, floorPosition[2]]
+}
 
 // Two separate timers. Between hits on the same victim the gap is short, or
 // three hits would never land before the target walks away; after a kill the
@@ -49,6 +69,16 @@ function distance2D(a, b) {
   return Math.hypot(a[0] - b[0], a[2] - b[2])
 }
 
+// Horizontal distance alone is not reach. Two players on the same (x, z) one
+// deck apart are zero units away by that measure, which would let a bot
+// stab straight up through the floor. The witness list already filters by
+// deck, so this is a second lock on the same door - deliberately, because
+// the failure it prevents is silent and lethal.
+function withinReach(fromEye, toEye, range) {
+  if (deckAtY(fromEye[1]) !== deckAtY(toEye[1])) return false
+  return distance2D(fromEye, toEye) <= range
+}
+
 export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPositions, broadcastState, shipEvents = null, randomFn = Math.random }) {
   const nav = createNavGraph(ROOM_LAYOUT, SKELD_CORRIDORS)
   const bots = new Map()
@@ -72,7 +102,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
       bots.set(id, {
         id,
         name,
-        position: [spawnPosition[0] + (randomFn() - 0.5) * 4, EYE_HEIGHT, spawnPosition[2] + (randomFn() - 0.5) * 4],
+        position: [spawnPosition[0] + (randomFn() - 0.5) * 4, 0, spawnPosition[2] + (randomFn() - 0.5) * 4],
         rotationY: 0,
         path: null,
         pathIndex: 0,
@@ -123,10 +153,12 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     return shipEvents?.currentVisionRadius() ?? SENSE_RADIUS
   }
 
+  // Both arguments must already be eye-height (see eyeOf).
   function canSee(fromPosition, toPosition, viewerId) {
-    return nav.canSee(fromPosition[0], fromPosition[2], toPosition[0], toPosition[2], senseRadius(viewerId))
+    return nav.canSee(fromPosition, toPosition, senseRadius(viewerId))
   }
 
+  // `position` and every entry of `positions` must be eye-height.
   function playersNear(position, positions, excludeId) {
     const near = []
     for (const [id, other] of positions) {
@@ -141,12 +173,18 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
   function advanceAlongPath(bot, budget) {
     let remaining = budget
     while (remaining > 0 && bot.path && bot.pathIndex < bot.path.length) {
-      const [targetX, targetZ] = bot.path[bot.pathIndex]
+      const [targetX, targetY, targetZ] = bot.path[bot.pathIndex]
       const dx = targetX - bot.position[0]
+      const dy = targetY - bot.position[1]
       const dz = targetZ - bot.position[2]
+      // Distance is measured on the floor plane, so a bot climbing a stair
+      // covers ground at walking pace rather than being slowed by the rise.
+      // The height simply follows the waypoints, which are sampled from the
+      // same ramp the player stands on.
       const step = Math.hypot(dx, dz)
 
       if (step <= 1e-6) {
+        bot.position[1] = targetY
         bot.pathIndex += 1
         continue
       }
@@ -156,12 +194,15 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
 
       if (step <= remaining) {
         bot.position[0] = targetX
+        bot.position[1] = targetY
         bot.position[2] = targetZ
         remaining -= step
         bot.pathIndex += 1
       } else {
-        bot.position[0] += (dx / step) * remaining
-        bot.position[2] += (dz / step) * remaining
+        const fraction = remaining / step
+        bot.position[0] += dx * fraction
+        bot.position[1] += dy * fraction
+        bot.position[2] += dz * fraction
         remaining = 0
       }
     }
@@ -169,13 +210,13 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
   }
 
   function setPath(bot, roomId, offset) {
-    const points = nav.waypointsTo([bot.position[0], bot.position[2]], roomId, offset)
+    const points = nav.waypointsTo(eyeOf(bot.position), roomId, offset)
     bot.path = points
     bot.pathIndex = points ? 1 : 0
   }
 
   function wander(bot) {
-    const currentRoom = nav.roomIdAt(bot.position[0], bot.position[2]) ?? nav.nearestRoomId(bot.position[0], bot.position[2])
+    const currentRoom = nav.roomIdAt(eyeOf(bot.position)) ?? nav.nearestRoomId(eyeOf(bot.position))
     const next = nav.randomAdjacentRoom(currentRoom, randomFn) ?? currentRoom
     setPath(bot, next, null)
   }
@@ -271,7 +312,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
   }
 
   function stepImpostor(bot, match, deltaSeconds, positions, now) {
-    const witnesses = playersNear(bot.position, positions, bot.id)
+    const witnesses = playersNear(eyeOf(bot.position), positions, bot.id)
     // Another impostor standing nearby is not a witness to worry about, and
     // must never be treated as a target.
     const targets = witnesses.filter((id) => gameState.getRole(match, id) !== 'impostor')
@@ -282,7 +323,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     if (targets.length === 1 && bystanders === witnesses.length - 1 && now >= bot.nextKillAllowedAt) {
       const targetId = targets[0]
       const targetPosition = positions.get(targetId)
-      if (targetPosition && distance2D(bot.position, targetPosition) <= ATTACK_RANGE) {
+      if (targetPosition && withinReach(eyeOf(bot.position), targetPosition, ATTACK_RANGE)) {
         if (now >= bot.nextAttackAllowedAt && gameActions.doAttack(bot.id, targetId)) {
           bot.nextAttackAllowedAt = now + ATTACK_COOLDOWN_MS
           if (!gameState.isAlive(match, targetId)) {
@@ -297,8 +338,8 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
         // Stalk: close the distance on the isolated target. A straight line
         // is only safe when both are inside the same open room - otherwise
         // it cuts through walls, so fall back to a routed path.
-        const botRoom = nav.roomIdAt(bot.position[0], bot.position[2])
-        const targetRoom = nav.roomIdAt(targetPosition[0], targetPosition[2])
+        const botRoom = nav.roomIdAt(eyeOf(bot.position))
+        const targetRoom = nav.roomIdAt(targetPosition)
         if (botRoom && botRoom === targetRoom) {
           bot.path = [[bot.position[0], bot.position[2]], [targetPosition[0], targetPosition[2]]]
           bot.pathIndex = 1
@@ -309,12 +350,13 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     }
 
     if (witnesses.length === 0 && now >= bot.nextVentAllowedAt && randomFn() < VENT_CHANCE_PER_TICK) {
-      const roomId = nav.roomIdAt(bot.position[0], bot.position[2])
+      const roomId = nav.roomIdAt(eyeOf(bot.position))
       const vent = VENT_LOCATIONS.find((v) => v.roomId === roomId)
       if (vent) {
         const result = gameActions.doVent(bot.id, vent.id)
         if (result) {
-          bot.position = [...result.position]
+          // doVent hands back an eye-height position; store the floor.
+          bot.position = [result.position[0], result.position[1] - EYE_HEIGHT, result.position[2]]
           bot.nextVentAllowedAt = now + VENT_COOLDOWN_MS
           bot.path = null
           return
@@ -350,7 +392,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
       return
     }
 
-    const targetRoom = nav.roomIdAt(targetPosition[0], targetPosition[2])
+    const targetRoom = nav.roomIdAt(targetPosition)
     if (!targetRoom) {
       wander(bot)
       return
@@ -371,13 +413,13 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     for (const bot of bots.values()) {
       if (!gameState.isAlive(match, bot.id)) continue
       try {
-        const roomId = nav.roomIdAt(bot.position[0], bot.position[2])
+        const roomId = nav.roomIdAt(eyeOf(bot.position))
         // A blinded bot records nothing at all. This is what makes Clarão
         // interesting rather than merely strong: casting it beside a murder
         // wipes the witnesses' memory of it.
         const blinded = now < bot.blindedUntil
         if (!blinded) {
-          bot.brain.noteNearbyPlayers(playersNear(bot.position, positions, bot.id), roomId, now)
+          bot.brain.noteNearbyPlayers(playersNear(eyeOf(bot.position), positions, bot.id), roomId, now)
         }
 
         // Repeat attempts are harmless: once one bot succeeds the phase is
@@ -390,7 +432,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
 
         if (blinded) {
           // Stumble: no attacking, no pathing decisions while blind.
-          broadcastState(bot.id, [bot.position[0], EYE_HEIGHT, bot.position[2]], bot.rotationY, seq)
+          broadcastState(bot.id, [bot.position[0], bot.position[1] + EYE_HEIGHT, bot.position[2]], bot.rotationY, seq)
           continue
         }
 
@@ -400,7 +442,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
           stepCrewmate(bot, match, deltaSeconds, now)
         }
 
-        broadcastState(bot.id, [bot.position[0], EYE_HEIGHT, bot.position[2]], bot.rotationY, seq)
+        broadcastState(bot.id, [bot.position[0], bot.position[1] + EYE_HEIGHT, bot.position[2]], bot.rotationY, seq)
       } catch {
         // One misbehaving bot must never take down the simulation loop for
         // everyone else; it simply idles this tick.
@@ -420,8 +462,8 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     if (!origin) return
     for (const bot of bots.values()) {
       if (bot.id === originId) continue
-      if (!canSee(bot.position, origin, bot.id)) continue
-      notify(bot, nav.roomIdAt(origin[0], origin[2]))
+      if (!canSee(eyeOf(bot.position), origin, bot.id)) continue
+      notify(bot, nav.roomIdAt(origin))
     }
   }
 
@@ -430,7 +472,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
   function teleportBot(botId, position) {
     const bot = bots.get(botId)
     if (!bot) return
-    bot.position = [position[0], EYE_HEIGHT, position[2]]
+    bot.position = [position[0], (position[1] ?? EYE_HEIGHT) - EYE_HEIGHT, position[2]]
     bot.path = null
   }
 
@@ -452,7 +494,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     const until = Date.now() + spell.blindSeconds * 1000
     for (const bot of bots.values()) {
       if (bot.id === playerId) continue
-      if (!nav.canSee(bot.position[0], bot.position[2], position[0], position[2], SENSE_RADIUS)) continue
+      if (!nav.canSee(eyeOf(bot.position), position, SENSE_RADIUS)) continue
       bot.blindedUntil = until
     }
   }
@@ -463,7 +505,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     if (gameState.getRole(match, bot.id) !== 'crewmate') return
     if (!gameState.canUseSpell(match, bot.id)) return
     if (gameState.getHealth(match, bot.id) > 1) return
-    gameActions.doCastSpell(bot.id, [bot.position[0], EYE_HEIGHT, bot.position[2]])
+    gameActions.doCastSpell(bot.id, [bot.position[0], bot.position[1] + EYE_HEIGHT, bot.position[2]])
   }
 
   function onAttack(attackerId, victimId, died) {

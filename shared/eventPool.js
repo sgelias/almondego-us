@@ -69,5 +69,9 @@ export function panelPosition(roomLayout, panelId) {
   if (!found) return null
   const room = roomLayout.find((r) => r.id === found.panel.roomId)
   if (!room) return null
-  return [room.center[0] + found.panel.offset[0], 0, room.center[2] + found.panel.offset[2]]
+  return [
+    room.center[0] + found.panel.offset[0],
+    room.center[1] + found.panel.offset[1],
+    room.center[2] + found.panel.offset[2],
+  ]
 }

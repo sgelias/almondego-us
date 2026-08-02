@@ -20,4 +20,15 @@ export const CORRIDOR_OVERRIDES = {
 // are provably the same corridors. If these were computed separately with
 // separately-declared overrides, any drift between them would put bots on
 // paths that walk through walls the human players can actually see.
-export const SKELD_CORRIDORS = computeCorridors(ROOM_LAYOUT, CORRIDOR_WIDTH, CORRIDOR_OVERRIDES)
+// Routed one deck at a time. The router treats every room it is not
+// connecting as an obstacle, so mixing decks would have a laboratory on the
+// upper deck blocking a corridor on the lower one - two floors apart and
+// utterly unrelated. Each corridor carries the deck it belongs to, because
+// downstream (geometry, minimap, bot pathing) all need to know which floor
+// they are drawing or walking.
+function corridorsForDeck(deck) {
+  const rooms = ROOM_LAYOUT.filter((room) => room.deck === deck)
+  return computeCorridors(rooms, CORRIDOR_WIDTH, CORRIDOR_OVERRIDES).map((corridor) => ({ ...corridor, deck }))
+}
+
+export const SKELD_CORRIDORS = [...corridorsForDeck(0), ...corridorsForDeck(1)]

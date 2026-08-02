@@ -69,5 +69,7 @@ export function stepPosition(roomLayout, taskId, stepIndex) {
   if (!step) return null
   const room = roomLayout.find((r) => r.id === step.roomId)
   if (!room) return null
-  return [room.center[0] + step.offset[0], 0, room.center[2] + step.offset[2]]
+  // room.center[1], not 0: a console in an upper-deck room belongs on that
+  // deck's floor, not on the ground floor seven metres below it.
+  return [room.center[0] + step.offset[0], room.center[1] + step.offset[1], room.center[2] + step.offset[2]]
 }

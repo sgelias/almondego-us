@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import { ROOM_LAYOUT } from '../../shared/skeldRooms.js'
+import { DECKS, deckFloorY, deckOfRoom } from '../../shared/decks.js'
+import { SKELD_STAIRS, STAIR_WIDTH, STAIR_RISE, stairPointAt } from '../../shared/skeldStairs.js'
 import { CORRIDOR_WIDTH, SKELD_CORRIDORS } from '../../shared/skeldCorridors.js'
 import { TASK_LOCATIONS, stepPosition } from '../../shared/taskPool.js'
 import { VENT_LOCATIONS } from '../../shared/ventPool.js'
@@ -383,7 +385,7 @@ function collectCorridorGeometry(corridors, roomsById) {
 
 function roomPosition(roomId, offset) {
   const room = ROOM_LAYOUT.find((r) => r.id === roomId)
-  return [room.center[0] + offset[0], offset[1], room.center[2] + offset[2]]
+  return [room.center[0] + offset[0], room.center[1] + offset[1], room.center[2] + offset[2]]
 }
 
 const CONSOLE_BODY_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x55606e, roughness: 0.6, metalness: 0.4 })
@@ -492,6 +494,65 @@ function addEmergencyButton(group) {
   return pedestal
 }
 
+const RAMP_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x3a4453, roughness: 0.9, metalness: 0.1 })
+const STEP_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x4d5869, roughness: 0.8, metalness: 0.15 })
+const RAIL_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x8fd3ff, emissive: 0x1b4a63, emissiveIntensity: 0.5 })
+
+// A stair is one smooth inclined plane for collision, with the visible steps
+// sitting on top as decor. Stepped collision geometry makes a capsule stutter
+// and snag on every riser; a plane is the case the octree resolves cleanly.
+// The player never touches the steps, only the ramp underneath them.
+function buildStair(collision, decor, stair) {
+  const foot = stairPointAt(stair, 0)
+  const top = stairPointAt(stair, 1)
+  const run = Math.hypot(top[0] - foot[0], top[2] - foot[2])
+  const length = Math.hypot(run, STAIR_RISE)
+  const angle = Math.atan2(STAIR_RISE, run)
+  const alongZ = stair.axis === 'z'
+  const climbingPositive = alongZ ? top[2] > foot[2] : top[0] > foot[0]
+
+  const ramp = new THREE.Mesh(
+    new THREE.BoxGeometry(alongZ ? STAIR_WIDTH : length, 0.4, alongZ ? length : STAIR_WIDTH),
+    RAMP_MATERIAL
+  )
+  ramp.position.set((foot[0] + top[0]) / 2, STAIR_RISE / 2 - 0.2, (foot[2] + top[2]) / 2)
+  // Rotating about x tilts a z-aligned ramp; about z, an x-aligned one. The
+  // sign flips with the direction of climb, or the slope faces downhill.
+  if (alongZ) ramp.rotation.x = climbingPositive ? -angle : angle
+  else ramp.rotation.z = climbingPositive ? angle : -angle
+  collision.add(ramp)
+
+  // The treads. Purely something for the eye to read as a staircase.
+  const STEPS = 14
+  for (let i = 1; i <= STEPS; i += 1) {
+    const t = i / STEPS
+    const [x, y, z] = stairPointAt(stair, t)
+    const tread = new THREE.Mesh(
+      new THREE.BoxGeometry(alongZ ? STAIR_WIDTH : run / STEPS, 0.12, alongZ ? run / STEPS : STAIR_WIDTH),
+      STEP_MATERIAL
+    )
+    tread.position.set(x, y + 0.07, z)
+    decor.add(tread)
+  }
+
+  // A lit handrail down each side: the one thing that makes a dim stairwell
+  // read as "you can go up here" from across the room.
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(
+      new THREE.BoxGeometry(alongZ ? 0.12 : length, 0.12, alongZ ? length : 0.12),
+      RAIL_MATERIAL
+    )
+    rail.position.set(
+      (foot[0] + top[0]) / 2 + (alongZ ? (side * STAIR_WIDTH) / 2 : 0),
+      STAIR_RISE / 2 + 1,
+      (foot[2] + top[2]) / 2 + (alongZ ? 0 : (side * STAIR_WIDTH) / 2)
+    )
+    if (alongZ) rail.rotation.x = climbingPositive ? -angle : angle
+    else rail.rotation.z = climbingPositive ? angle : -angle
+    decor.add(rail)
+  }
+}
+
 export function buildSkeldMap() {
   const group = new THREE.Group()
   // Only floors and walls go in `collision`; everything purely visual goes in
@@ -503,31 +564,57 @@ export function buildSkeldMap() {
   group.add(collision)
   group.add(decor)
 
-  const corridors = SKELD_CORRIDORS
   const roomsById = new Map(ROOM_LAYOUT.map((room) => [room.id, room]))
 
-  // Two passes. Corridor walls need to know where every other piece of
-  // floor is so they can be cut back at openings, so all floor is laid
-  // before any corridor wall goes up.
-  const floorRects = []
-  const { segments, bends } = collectCorridorGeometry(corridors, roomsById)
+  // One deck at a time, each into its own group that is then lifted to its
+  // height. Every builder below was written against a flat y = 0 world;
+  // offsetting the group instead of threading a height through all of them
+  // keeps that code untouched and unable to disagree about what floor it is
+  // building.
+  //
+  // floorRects is per deck for the same reason corridors are routed per
+  // deck: it drives where corridor walls get cut back for an opening, and a
+  // patch of floor seven metres up must not open a doorway down here.
+  for (const deck of DECKS) {
+    const deckCollision = new THREE.Group()
+    const deckDecor = new THREE.Group()
+    deckCollision.position.y = deckFloorY(deck)
+    deckDecor.position.y = deckFloorY(deck)
+    collision.add(deckCollision)
+    decor.add(deckDecor)
 
-  for (const room of ROOM_LAYOUT) {
-    buildRoomFloor(collision, decor, room, floorRects)
-  }
-  for (const segment of segments) {
-    buildCorridorFloor(collision, decor, segment.x1, segment.z1, segment.x2, segment.z2, segment.height, floorRects)
-  }
-  for (const bend of bends) {
-    buildBendPatch(collision, bend.x, bend.z, floorRects)
+    const rooms = ROOM_LAYOUT.filter((room) => deckOfRoom(room) === deck)
+    const corridors = SKELD_CORRIDORS.filter((corridor) => (corridor.deck ?? 0) === deck)
+
+    // Two passes. Corridor walls need to know where every other piece of
+    // floor is so they can be cut back at openings, so all floor is laid
+    // before any corridor wall goes up.
+    const floorRects = []
+    const { segments, bends } = collectCorridorGeometry(corridors, roomsById)
+
+    for (const room of rooms) {
+      buildRoomFloor(deckCollision, deckDecor, room, floorRects)
+    }
+    for (const segment of segments) {
+      buildCorridorFloor(deckCollision, deckDecor, segment.x1, segment.z1, segment.x2, segment.z2, segment.height, floorRects)
+    }
+    for (const bend of bends) {
+      buildBendPatch(deckCollision, bend.x, bend.z, floorRects)
+    }
+
+    for (const room of rooms) {
+      buildRoom(deckCollision, deckDecor, room, corridors)
+      addRoomProps(deckDecor, room)
+    }
+    for (const segment of segments) {
+      buildCorridorWalls(deckCollision, segment.x1, segment.z1, segment.x2, segment.z2, segment.height, floorRects)
+    }
   }
 
-  for (const room of ROOM_LAYOUT) {
-    buildRoom(collision, decor, room, corridors)
-    addRoomProps(decor, room)
-  }
-  for (const segment of segments) {
-    buildCorridorWalls(collision, segment.x1, segment.z1, segment.x2, segment.z2, segment.height, floorRects)
+  // Stairs are the one thing that belongs to no single deck, so they are
+  // built in absolute coordinates outside the per-deck groups.
+  for (const stair of SKELD_STAIRS) {
+    buildStair(collision, decor, stair)
   }
 
   const taskMeshes = addTaskMarkers(decor)

@@ -570,7 +570,7 @@ function connect(url, name, lobby) {
       } else if (
         localAlive &&
         msg.position &&
-        navGraph.canSee(camera.position.x, camera.position.z, msg.position[0], msg.position[2], VISION_RADIUS)
+        navGraph.canSee([camera.position.x, camera.position.y, camera.position.z], msg.position, VISION_RADIUS)
       ) {
         // Only people who could actually see the flash are blinded - the
         // same line-of-sight rule the rest of the game uses.
@@ -789,7 +789,11 @@ function startGame(lobby) {
     const radarActive = Date.now() < radarUntil
     const mapMarkers = []
     remotePlayers.applyVisibility((id, position) => {
-      const seen = navGraph.canSee(camera.position.x, camera.position.z, position.x, position.z, currentVisionRadius())
+      const seen = navGraph.canSee(
+        [camera.position.x, camera.position.y, camera.position.z],
+        [position.x, position.y, position.z],
+        currentVisionRadius()
+      )
       if (seen || radarActive) {
         mapMarkers.push({ x: position.x, z: position.z, colorIndex: roster.get(id)?.colorIndex, faded: !seen })
       }
