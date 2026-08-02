@@ -65,7 +65,7 @@ export function showLobby({ onHostAndJoin, onJoin, onStart }) {
 
   const addressInput = document.createElement('input')
   addressInput.type = 'text'
-  addressInput.placeholder = 'Endereço do host (ex: 192.168.1.10:8080)'
+  addressInput.placeholder = 'Endereço do anfitrião (ex: 192.168.1.10:8080)'
   textInput(addressInput)
   panel.appendChild(addressInput)
 
