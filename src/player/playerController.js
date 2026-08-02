@@ -29,6 +29,7 @@ export function createPlayerController(camera, worldOctree, spawnPoint) {
   let yaw = 0
   let pitch = 0
   let headBobTime = 0
+  let frozen = false
 
   function playerCollisions() {
     const result = worldOctree.capsuleIntersect(playerCollider)
@@ -99,6 +100,7 @@ export function createPlayerController(camera, worldOctree, spawnPoint) {
 
   return {
     update(deltaTime) {
+      if (frozen) return
       const clampedDelta = Math.min(0.05, deltaTime)
       const subDelta = clampedDelta / STEPS_PER_FRAME
 
@@ -119,6 +121,7 @@ export function createPlayerController(camera, worldOctree, spawnPoint) {
     },
 
     handleKeyDown(event) {
+      if (frozen) return
       keyStates[event.code] = true
     },
 
@@ -127,9 +130,17 @@ export function createPlayerController(camera, worldOctree, spawnPoint) {
     },
 
     handleMouseMove(event) {
+      if (frozen) return
       if (!document.pointerLockElement) return
       yaw -= event.movementX * MOUSE_SENSITIVITY
       pitch = clampPitch(pitch - event.movementY * MOUSE_SENSITIVITY)
+    },
+
+    setFrozen(value) {
+      frozen = value
+      if (frozen) {
+        for (const key of Object.keys(keyStates)) keyStates[key] = false
+      }
     },
   }
 }
