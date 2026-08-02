@@ -207,8 +207,13 @@ function openTaskQuiz(taskId) {
 
   player.setFrozen(true)
   document.exitPointerLock()
+  // Ask the server to hold the bots while the question is on screen. Being
+  // killed part-way through a sum punishes precisely the behaviour the
+  // educational tasks exist to encourage (AD-009).
+  netClient.send(MESSAGE_TYPE.BUSY, { busy: true })
 
   taskQuiz.show(drawTaskQuestion(Math.random), (result) => {
+    netClient.send(MESSAGE_TYPE.BUSY, { busy: false })
     if (!gameEnded && !interactionsPaused) player.setFrozen(false)
 
     if (result === 'correct') {

@@ -59,6 +59,13 @@ const socketsByPlayerId = new Map()
 const humanPositions = new Map()
 let hostId = null
 let match = null
+// Players currently answering a task question. Bot simulation is paused
+// while this is non-empty (AD-009).
+const busyPlayers = new Set()
+
+function syncBotPause() {
+  botRunner?.setPaused(busyPlayers.size > 0)
+}
 
 const wss = new WebSocketServer({ port: PORT })
 
@@ -150,9 +157,11 @@ function startMatch(socket) {
     broadcastToAll(MESSAGE_TYPE.PLAYER_JOINED, { id, name, colorIndex })
   }
 
+  busyPlayers.clear()
   broadcastToAll(MESSAGE_TYPE.START, {})
   gameActions.startMatch([...players.keys()])
   botRunner.start()
+  syncBotPause()
 }
 
 wss.on('connection', (socket) => {
@@ -227,6 +236,14 @@ wss.on('connection', (socket) => {
         gameActions.doVent(socket.playerId, message.ventId)
         return
 
+      case MESSAGE_TYPE.BUSY: {
+        if (!socket.playerId) return
+        if (message.busy) busyPlayers.add(socket.playerId)
+        else busyPlayers.delete(socket.playerId)
+        syncBotPause()
+        return
+      }
+
       default:
         return
     }
@@ -239,6 +256,9 @@ wss.on('connection', (socket) => {
     players.delete(playerId)
     socketsByPlayerId.delete(playerId)
     humanPositions.delete(playerId)
+    // A player who disconnects mid-question must not leave the bots frozen.
+    busyPlayers.delete(playerId)
+    syncBotPause()
     broadcastToAll(MESSAGE_TYPE.PLAYER_LEFT, { id: playerId })
     if (playerId === hostId) hostId = null
 

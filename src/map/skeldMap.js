@@ -112,18 +112,19 @@ function wallSideAndCoord(room, point) {
   return { side: 'south', coord: x }
 }
 
+function buildRoomFloor(collision, decor, room, floorRects) {
+  const [width, height, depth] = room.size
+  const [cx, , cz] = room.center
+  addFloorSlab(collision, cx, cz, width, depth)
+  floorRects.push({ xMin: cx - width / 2, xMax: cx + width / 2, zMin: cz - depth / 2, zMax: cz + depth / 2 })
+  addCeilingSlab(decor, cx, cz, width, depth, height)
+  addLightStrip(decor, cx, cz, width * 0.55, 0.35, height)
+  addLightStrip(decor, cx, cz, 0.35, depth * 0.55, height)
+}
+
 function buildRoom(collision, decor, room, corridors) {
   const [width, height, depth] = room.size
   const [cx, , cz] = room.center
-
-  addFloorSlab(collision, cx, cz, width, depth)
-  addCeilingSlab(decor, cx, cz, width, depth, height)
-
-  // A cross of ceiling strips reads as installed lighting and gives each
-  // room a bright anchor without adding a real light source.
-  addLightStrip(decor, cx, cz, width * 0.55, 0.35, height)
-  addLightStrip(decor, cx, cz, 0.35, depth * 0.55, height)
-
   const gapsBySide = { north: [], south: [], east: [], west: [] }
   for (const corridor of corridors) {
     if (corridor.roomAId === room.id) {
@@ -168,12 +169,32 @@ function buildRoom(collision, decor, room, corridors) {
 // See STATE.md L-013.
 const MAX_SEGMENT_LENGTH = CORRIDOR_WIDTH * 2
 
-// One straight, axis-aligned length of corridor between two consecutive
-// waypoints - floor plus a wall down each side, split into chunks no
-// longer than MAX_SEGMENT_LENGTH. Direction is inferred from which
-// coordinate is constant between the two points (both are guaranteed equal
-// on one axis - see corridorRouting.js).
-function buildCorridorSegment(collision, decor, x1, z1, x2, z2, height) {
+// Subtracts `gaps` from the span [start, end], returning the pieces that
+// remain. Same sweep buildWallWithGaps uses for doors, reused here for
+// corridor walls.
+function subtractGaps(start, end, gaps) {
+  const sorted = [...gaps].sort((a, b) => a[0] - b[0])
+  const pieces = []
+  let cursor = start
+  for (const [gapStart, gapEnd] of sorted) {
+    if (gapEnd <= cursor) continue
+    if (gapStart > cursor) pieces.push([cursor, Math.min(gapStart, end)])
+    cursor = Math.max(cursor, gapEnd)
+    if (cursor >= end) break
+  }
+  if (cursor < end) pieces.push([cursor, end])
+  return pieces.filter(([a, b]) => b - a > 0.05)
+}
+
+// How far past a corridor wall to look for floor belonging to something
+// else. Room footprints are kept at least a unit clear of corridor edges by
+// the router's padding, so this only ever finds a genuine opening.
+const WALL_PROBE = 0.3
+
+// One straight, axis-aligned length of corridor - floor only. Walls are a
+// separate pass because they need to know about every other piece of floor
+// in the map (see buildCorridorWalls).
+function buildCorridorFloor(collision, decor, x1, z1, x2, z2, height, floorRects) {
   const length = Math.hypot(x2 - x1, z2 - z1)
   if (length < 0.01) return
   const runsAlongX = z1 === z2
@@ -184,28 +205,20 @@ function buildCorridorSegment(collision, decor, x1, z1, x2, z2, height) {
   for (let i = 0; i < chunkCount; i += 1) {
     const t0 = i / chunkCount
     const t1 = (i + 1) / chunkCount
-    const cx1 = x1 + (x2 - x1) * t0
-    const cz1 = z1 + (z2 - z1) * t0
-    const cx2 = x1 + (x2 - x1) * t1
-    const cz2 = z1 + (z2 - z1) * t1
-    const midX = (cx1 + cx2) / 2
-    const midZ = (cz1 + cz2) / 2
+    const midX = x1 + (x2 - x1) * ((t0 + t1) / 2)
+    const midZ = z1 + (z2 - z1) * ((t0 + t1) / 2)
+    const w = runsAlongX ? chunkLength : CORRIDOR_WIDTH
+    const d = runsAlongX ? CORRIDOR_WIDTH : chunkLength
 
-    const floorGeometry = runsAlongX
-      ? applyBoxUvScale(new THREE.BoxGeometry(chunkLength, FLOOR_THICKNESS, CORRIDOR_WIDTH), chunkLength, FLOOR_THICKNESS, CORRIDOR_WIDTH)
-      : applyBoxUvScale(new THREE.BoxGeometry(CORRIDOR_WIDTH, FLOOR_THICKNESS, chunkLength), CORRIDOR_WIDTH, FLOOR_THICKNESS, chunkLength)
-    const floor = new THREE.Mesh(floorGeometry, FLOOR_MATERIAL)
+    const floor = new THREE.Mesh(
+      applyBoxUvScale(new THREE.BoxGeometry(w, FLOOR_THICKNESS, d), w, FLOOR_THICKNESS, d),
+      FLOOR_MATERIAL
+    )
     floor.position.set(midX, -FLOOR_THICKNESS / 2, midZ)
     collision.add(floor)
+    floorRects.push({ xMin: midX - w / 2, xMax: midX + w / 2, zMin: midZ - d / 2, zMax: midZ + d / 2 })
 
-    addCeilingSlab(
-      decor,
-      midX,
-      midZ,
-      runsAlongX ? chunkLength : CORRIDOR_WIDTH,
-      runsAlongX ? CORRIDOR_WIDTH : chunkLength,
-      height
-    )
+    addCeilingSlab(decor, midX, midZ, w, d, height)
     // A continuous glowing line down the middle of every corridor - the
     // strongest single cue that these are built passageways rather than
     // gaps between boxes.
@@ -217,23 +230,64 @@ function buildCorridorSegment(collision, decor, x1, z1, x2, z2, height) {
       runsAlongX ? 0.25 : chunkLength * 0.9,
       height
     )
+  }
+}
 
-    if (runsAlongX) {
-      const wallGeometry = applyBoxUvScale(new THREE.BoxGeometry(chunkLength, height, WALL_THICKNESS), chunkLength, height, WALL_THICKNESS)
-      const wallNorth = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
-      wallNorth.position.set(midX, height / 2, midZ + CORRIDOR_WIDTH / 2)
-      collision.add(wallNorth)
-      const wallSouth = new THREE.Mesh(wallGeometry.clone(), WALL_MATERIAL)
-      wallSouth.position.set(midX, height / 2, midZ - CORRIDOR_WIDTH / 2)
-      collision.add(wallSouth)
-    } else {
-      const wallGeometry = applyBoxUvScale(new THREE.BoxGeometry(WALL_THICKNESS, height, chunkLength), WALL_THICKNESS, height, chunkLength)
-      const wallEast = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
-      wallEast.position.set(midX + CORRIDOR_WIDTH / 2, height / 2, midZ)
-      collision.add(wallEast)
-      const wallWest = new THREE.Mesh(wallGeometry.clone(), WALL_MATERIAL)
-      wallWest.position.set(midX - CORRIDOR_WIDTH / 2, height / 2, midZ)
-      collision.add(wallWest)
+// Corridor walls, cut back wherever there is floor immediately on the other
+// side of them.
+//
+// This is what made bots appear to walk through walls while the player could
+// not follow. At every bend, the straight segment's side wall ran the full
+// length of its run - straight across the mouth of the perpendicular segment
+// it turns into. Bots have no collision and walked through the stub; the
+// player's capsule hit it. Measured before the fix: 39 points along the
+// corridor centrelines - the exact routes bots walk - were inside a wall.
+//
+// Building a wall only where nothing is on the far side handles bends,
+// corridor-to-corridor junctions, and corridor mouths at rooms with one
+// rule, instead of enumerating the cases.
+function buildCorridorWalls(collision, x1, z1, x2, z2, height, floorRects) {
+  const length = Math.hypot(x2 - x1, z2 - z1)
+  if (length < 0.01) return
+  const runsAlongX = z1 === z2
+  const half = CORRIDOR_WIDTH / 2
+
+  const runStart = runsAlongX ? Math.min(x1, x2) : Math.min(z1, z2)
+  const runEnd = runsAlongX ? Math.max(x1, x2) : Math.max(z1, z2)
+  const fixed = runsAlongX ? z1 : x1
+
+  for (const side of [1, -1]) {
+    const wallCoord = fixed + side * half
+    const probe = wallCoord + side * WALL_PROBE
+
+    const gaps = []
+    for (const rect of floorRects) {
+      const acrossMin = runsAlongX ? rect.zMin : rect.xMin
+      const acrossMax = runsAlongX ? rect.zMax : rect.xMax
+      if (probe < acrossMin || probe > acrossMax) continue
+      const alongMin = runsAlongX ? rect.xMin : rect.zMin
+      const alongMax = runsAlongX ? rect.xMax : rect.zMax
+      if (alongMax <= runStart || alongMin >= runEnd) continue
+      gaps.push([Math.max(runStart, alongMin), Math.min(runEnd, alongMax)])
+    }
+
+    for (const [pieceStart, pieceEnd] of subtractGaps(runStart, runEnd, gaps)) {
+      const pieceLength = pieceEnd - pieceStart
+      const chunks = Math.max(1, Math.ceil(pieceLength / MAX_SEGMENT_LENGTH))
+      for (let i = 0; i < chunks; i += 1) {
+        const a = pieceStart + (pieceLength * i) / chunks
+        const b = pieceStart + (pieceLength * (i + 1)) / chunks
+        const mid = (a + b) / 2
+        const len = b - a
+        const w = runsAlongX ? len : WALL_THICKNESS
+        const d = runsAlongX ? WALL_THICKNESS : len
+        const wall = new THREE.Mesh(
+          applyBoxUvScale(new THREE.BoxGeometry(w, height, d), w, height, d),
+          WALL_MATERIAL
+        )
+        wall.position.set(runsAlongX ? mid : wallCoord, height / 2, runsAlongX ? wallCoord : mid)
+        collision.add(wall)
+      }
     }
   }
 }
@@ -241,11 +295,13 @@ function buildCorridorSegment(collision, decor, x1, z1, x2, z2, height) {
 // A square, wall-less floor patch at each interior bend, so two
 // perpendicular corridor segments always have continuous floor under their
 // turn regardless of exactly where each segment's own box ends.
-function buildBendPatch(group, x, z) {
+function buildBendPatch(group, x, z, floorRects) {
   const geometry = applyBoxUvScale(new THREE.BoxGeometry(CORRIDOR_WIDTH, FLOOR_THICKNESS, CORRIDOR_WIDTH), CORRIDOR_WIDTH, FLOOR_THICKNESS, CORRIDOR_WIDTH)
   const mesh = new THREE.Mesh(geometry, FLOOR_MATERIAL)
   mesh.position.set(x, -FLOOR_THICKNESS / 2, z)
   group.add(mesh)
+  const half = CORRIDOR_WIDTH / 2
+  floorRects.push({ xMin: x - half, xMax: x + half, zMin: z - half, zMax: z + half })
 }
 
 // Two different logical connections routinely share part of their physical
@@ -408,16 +464,28 @@ export function buildSkeldMap() {
   const corridors = SKELD_CORRIDORS
   const roomsById = new Map(ROOM_LAYOUT.map((room) => [room.id, room]))
 
+  // Two passes. Corridor walls need to know where every other piece of
+  // floor is so they can be cut back at openings, so all floor is laid
+  // before any corridor wall goes up.
+  const floorRects = []
+  const { segments, bends } = collectCorridorGeometry(corridors, roomsById)
+
+  for (const room of ROOM_LAYOUT) {
+    buildRoomFloor(collision, decor, room, floorRects)
+  }
+  for (const segment of segments) {
+    buildCorridorFloor(collision, decor, segment.x1, segment.z1, segment.x2, segment.z2, segment.height, floorRects)
+  }
+  for (const bend of bends) {
+    buildBendPatch(collision, bend.x, bend.z, floorRects)
+  }
+
   for (const room of ROOM_LAYOUT) {
     buildRoom(collision, decor, room, corridors)
     addRoomProps(decor, room)
   }
-  const { segments, bends } = collectCorridorGeometry(corridors, roomsById)
   for (const segment of segments) {
-    buildCorridorSegment(collision, decor, segment.x1, segment.z1, segment.x2, segment.z2, segment.height)
-  }
-  for (const bend of bends) {
-    buildBendPatch(collision, bend.x, bend.z)
+    buildCorridorWalls(collision, segment.x1, segment.z1, segment.x2, segment.z2, segment.height, floorRects)
   }
 
   const taskMeshes = addTaskMarkers(decor)

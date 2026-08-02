@@ -19,6 +19,9 @@ export const MESSAGE_TYPE = {
   MEETING_STARTED: 'meetingStarted',
   MEETING_RESULT: 'meetingResult',
   GAME_OVER: 'gameOver',
+  // A human is mid-quiz; the server pauses bot simulation while any player
+  // is (see AD-009).
+  BUSY: 'busy',
 }
 
 const KNOWN_TYPES = new Set(Object.values(MESSAGE_TYPE))

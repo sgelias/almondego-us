@@ -38,7 +38,9 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
   const nav = createNavGraph(ROOM_LAYOUT, SKELD_CORRIDORS)
   const bots = new Map()
   let tickTimer = null
+  let paused = false
   let matchStartedAt = 0
+  let pausedAt = 0
   let seq = 0
 
   function isBot(playerId) {
@@ -266,6 +268,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
   }
 
   function tick() {
+    if (paused) return
     const match = getMatch()
     if (!match || match.phase !== 'playing') return
 
@@ -382,11 +385,31 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     bots.clear()
   }
 
+  // While a child is working through a task question the world must not
+  // carry on without them - being killed mid-arithmetic punishes exactly the
+  // behaviour the educational tasks are meant to encourage (AD-009). Kill
+  // cooldowns are pushed forward by the paused duration so the pause cannot
+  // be used to bank a free kill either.
+  function setPaused(value) {
+    if (paused === value) return
+    paused = value
+    if (value) {
+      pausedAt = Date.now()
+      return
+    }
+    const elapsed = Date.now() - pausedAt
+    for (const bot of bots.values()) {
+      bot.nextKillAllowedAt += elapsed
+      bot.nextVentAllowedAt += elapsed
+    }
+  }
+
   return {
     spawnBots,
     start,
     stop,
     isBot,
+    setPaused,
     hooks: { onKill, onVent, onMeetingStarted, onMeetingEnded, onGameOver: () => stop() },
   }
 }
