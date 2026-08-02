@@ -59,6 +59,14 @@ Not used in this project. Rendering, collision-in-the-actual-scene, mouselook fe
 | Net client (`src/net/client.js`) | none | — | manual playtest |
 | Remote players (`src/net/remotePlayers.js`) | none | — | manual playtest |
 | Lobby screen (`src/lobby/lobbyScreen.js`) | none | — | manual playtest |
+| Task pool data (`shared/taskPool.js`) | unit | `shared/taskPool.test.js` | `node --test 'shared/**/*.test.js'` |
+| Vent pool data + destination lookup (`shared/ventPool.js`) | unit | `shared/ventPool.test.js` | `node --test 'shared/**/*.test.js'` |
+| Game rules — roles/tasks/votes/win conditions (`server/gameState.js`) | unit | `server/gameState.test.js` | `node --test 'server/**/*.test.js'` |
+| Server wiring (`server/index.js`, modified) | none | — | manual playtest (2+ browser clients) |
+| Role/task HUD (`src/game/roleUI.js`) | none | — | manual playtest |
+| Task interaction (`src/game/taskInteraction.js`) | none | — | manual playtest |
+| Meeting UI (`src/game/meetingUI.js`) | none | — | manual playtest |
+| Game over screen (`src/game/gameOverScreen.js`) | none | — | manual playtest |
 
 ## Parallelism Assessment
 
