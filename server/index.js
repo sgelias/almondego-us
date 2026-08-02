@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { randomUUID } from 'node:crypto'
 import { getLanAddress } from './lanAddress.js'
 import { MESSAGE_TYPE, isKnownMessageType } from '../shared/protocol.js'
-import { sanitizeNoticeText, pushNotice } from '../shared/lobbyNotices.js'
+import { sanitizeNoticeText, pushNotice, canPostNotice } from '../shared/lobbyNotices.js'
 import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
 import { createGameActions } from './gameActions.js'
 import { createBotRunner } from './botRunner.js'
@@ -264,7 +264,7 @@ wss.on('connection', (socket) => {
         // Host only, and only between matches: this is a briefing board, not
         // an in-game chat channel that would leak information past the
         // vision rules the whole game is built on.
-        if (socket.playerId !== hostId || match) return
+        if (!canPostNotice({ isHost: socket.playerId === hostId, matchInProgress: match !== null })) return
         const text = sanitizeNoticeText(message.text)
         if (!text) return
         const notice = { text, at: Date.now() }

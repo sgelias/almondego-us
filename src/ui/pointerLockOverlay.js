@@ -31,11 +31,7 @@ export function initPointerLockOverlay(domElement) {
   const listeners = []
   const activateListeners = []
 
-  overlay.addEventListener('click', (event) => {
-    // A click on something added to the pause screen (the volume slider) is
-    // not a request to resume the match.
-    if (event.target !== overlay && event.target !== title) return
-
+  overlay.addEventListener('click', () => {
     // onActivate runs synchronously inside the click handler. Audio
     // specifically needs that: browsers only unlock an AudioContext from a
     // real user gesture, and the 'pointerlockchange' event that fires

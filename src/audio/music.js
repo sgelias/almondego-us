@@ -33,9 +33,15 @@ export function createMusic({
 } = {}) {
   let playlist = []
   let index = 0
+  // Which track is actually loaded into the element. Tracked here rather
+  // than compared against audio.src, because reading .src back gives the
+  // resolved absolute URL, never the relative string that was assigned - so
+  // that comparison would be true every time and the guard would be dead.
+  let loadedIndex = -1
   let wanted = false
   let ducked = false
   let waitingForGesture = false
+  let consecutiveErrors = 0
 
   // Note the null check: Number(null) is 0, which is a perfectly valid
   // volume, so reading it loosely would start every new player on mute.
@@ -68,7 +74,10 @@ export function createMusic({
 
   function play() {
     if (!wanted || playlist.length === 0) return
-    if (audio.src !== playlist[index]) audio.src = playlist[index]
+    if (loadedIndex !== index) {
+      audio.src = playlist[index]
+      loadedIndex = index
+    }
     applyVolume()
     audio.play?.()?.catch?.(retryOnNextGesture)
   }
@@ -79,14 +88,28 @@ export function createMusic({
     if (index >= playlist.length) {
       playlist = shuffled(playlist, randomFn)
       index = 0
+      loadedIndex = -1
     }
     play()
   }
 
   audio.addEventListener('ended', next)
-  // A corrupt or half-uploaded file should cost one track, not the soundtrack.
+  audio.addEventListener('playing', () => {
+    consecutiveErrors = 0
+  })
+  // A corrupt or half-uploaded file should cost one track, not the
+  // soundtrack - but a folder where nothing is playable (an unsupported
+  // codec, say) must not spin through the playlist forever hitting the
+  // network. One full pass with nothing playable is enough to give up.
   audio.addEventListener('error', () => {
-    if (wanted) next()
+    if (!wanted) return
+    consecutiveErrors += 1
+    if (consecutiveErrors > playlist.length) {
+      wanted = false
+      console.warn('Nenhuma faixa de assets/ pôde ser tocada; seguindo sem música.')
+      return
+    }
+    next()
   })
 
   return {
@@ -100,10 +123,15 @@ export function createMusic({
           randomFn
         )
         index = 0
+        loadedIndex = -1
       } catch (error) {
         console.warn('Não consegui listar as músicas de fundo:', error)
         playlist = []
       }
+      // A match can begin before this resolves: ROLE arrives on a server
+      // message, not on our timeline. Without this the player would have
+      // asked for music, found an empty playlist, and stayed silent forever.
+      if (wanted) play()
       return playlist.length
     },
 

@@ -25,7 +25,7 @@ que serviu a página, e quem entrar primeiro vira o anfitrião — é quem vê o
 botão **Iniciar Partida**.
 
 ```bash
-npm test     # 163 testes
+npm test     # 168 testes
 npm run server  # só o servidor de partida
 npm run web     # só o servidor do cliente
 ```

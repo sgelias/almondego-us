@@ -5,7 +5,17 @@ import { createMusic, DEFAULT_VOLUME } from './music.js'
 function fakeAudio() {
   const listeners = {}
   return {
-    src: '',
+    // src is stored resolved, the way a real element does it: assigning a
+    // relative path and reading back an absolute URL. A fake that returned
+    // the assigned string verbatim would let a read-back comparison pass
+    // here and be dead in the browser.
+    _src: '',
+    get src() {
+      return this._src
+    },
+    set src(value) {
+      this._src = new URL(value, 'http://game.test/').href
+    },
     volume: 1,
     paused: true,
     plays: 0,
@@ -18,6 +28,7 @@ function fakeAudio() {
     play() {
       this.plays += 1
       this.paused = false
+      this.emit('playing')
       return Promise.resolve()
     },
     pause() {
@@ -46,7 +57,7 @@ test('plays a track from the assets folder once started', async () => {
   const music = createMusic({ audio, fetchTracks: tracksFn, randomFn: noShuffle, storage: fakeStorage() })
   assert.equal(await music.load(), 3)
   music.start()
-  assert.ok(audio.src.startsWith('assets/'), `did not load from assets: ${audio.src}`)
+  assert.ok(audio.src.includes('/assets/'), `did not load from assets: ${audio.src}`)
   assert.equal(audio.paused, false)
 })
 
@@ -62,7 +73,10 @@ test('filenames with spaces and symbols survive as URLs', async () => {
   music.start()
   assert.ok(!audio.src.includes(' '), `unencoded space in ${audio.src}`)
   assert.ok(!audio.src.includes('&'), `unencoded ampersand in ${audio.src}`)
-  assert.equal(decodeURIComponent(audio.src), 'assets/Down The Rabbit Hole - Density & Time.mp3')
+  assert.equal(
+    decodeURIComponent(new URL(audio.src).pathname),
+    '/assets/Down The Rabbit Hole - Density & Time.mp3'
+  )
 })
 
 test('the default volume is quiet, as background music should be', () => {
@@ -123,7 +137,7 @@ test('the playlist wraps around instead of falling silent at the end', async () 
   await music.load()
   music.start()
   for (let i = 0; i < TRACKS.length * 2; i += 1) audio.emit('ended')
-  assert.ok(audio.src.startsWith('assets/'))
+  assert.ok(audio.src.includes('/assets/'))
   assert.equal(audio.paused, false)
 })
 
@@ -221,4 +235,58 @@ test('the playlist is shuffled, so a match does not always open on the same trac
     firsts.add(audio.src)
   }
   assert.ok(firsts.size > 1, 'every match starts with the same track')
+})
+
+test('a match that starts before the track list arrives still gets music', async () => {
+  const audio = fakeAudio()
+  let release
+  const music = createMusic({
+    audio,
+    fetchTracks: () => new Promise((resolve) => (release = resolve)),
+    randomFn: noShuffle,
+    storage: fakeStorage(),
+  })
+
+  const loading = music.load()
+  // ROLE arrives on a server message, not on our timeline: it can land while
+  // the fetch is still in flight.
+  music.start()
+  assert.equal(audio.plays, 0, 'nothing to play yet')
+
+  release(TRACKS)
+  await loading
+  assert.ok(audio.plays > 0, 'the music never started: the match beat the track list')
+  assert.equal(audio.paused, false)
+})
+
+test('a folder where nothing is playable gives up instead of looping forever', async () => {
+  const audio = fakeAudio()
+  audio.play = function () {
+    this.plays += 1
+    return Promise.resolve()
+  }
+  const music = createMusic({ audio, fetchTracks: tracksFn, randomFn: noShuffle, storage: fakeStorage() })
+  await music.load()
+  music.start()
+
+  const warn = console.warn
+  console.warn = () => {}
+  try {
+    for (let i = 0; i < 200; i += 1) audio.emit('error')
+  } finally {
+    console.warn = warn
+  }
+  assert.ok(audio.plays <= TRACKS.length + 1, `hammered the network ${audio.plays} times over ${TRACKS.length} tracks`)
+})
+
+test('one bad file among good ones does not end the soundtrack', async () => {
+  const audio = fakeAudio()
+  const music = createMusic({ audio, fetchTracks: tracksFn, randomFn: noShuffle, storage: fakeStorage() })
+  await music.load()
+  music.start()
+  for (let round = 0; round < 10; round += 1) {
+    audio.emit('error') // one failure...
+    audio.emit('ended') // ...then a track that plays through
+  }
+  assert.equal(audio.paused, false, 'gave up despite tracks still playing fine')
 })

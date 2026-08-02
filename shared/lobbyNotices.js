@@ -32,3 +32,17 @@ export function pushNotice(notices, notice) {
   while (notices.length > MAX_NOTICE_HISTORY) notices.shift()
   return notices
 }
+
+// The two rules that decide whether a notice may be published at all. They
+// live here, with a test, rather than as bare conditions inside a socket
+// switch: this repo has twice shipped a guard that failed open in silence
+// (L-011, L-018), and both of these fail open the same way if they break -
+// a guest posting to everyone, or a briefing channel staying open during a
+// match and bypassing the vision rules the game is built on.
+// Both flags must be exactly the boolean that permits posting. `!== true`
+// would read a truthy non-boolean (a match object passed where a flag was
+// meant) as "no match in progress" and open the board mid-game - the precise
+// shape of failing open this function exists to prevent.
+export function canPostNotice({ isHost, matchInProgress }) {
+  return isHost === true && matchInProgress === false
+}
