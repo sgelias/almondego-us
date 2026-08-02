@@ -17,7 +17,6 @@ import { TASK_LOCATIONS } from '../shared/taskPool.js'
 
 const DEFAULT_PORT = 8080
 const STATE_SEND_INTERVAL = 1 / 15
-const MIN_PLAYERS_TO_START = 3
 const MEETING_RESULT_DISPLAY_MS = 4000
 
 const canvas = document.getElementById('app')
@@ -171,6 +170,13 @@ function connect(url, name, lobby) {
 
   netClient.on(CONNECTION_ERROR, ({ message }) => {
     lobby.showConnectionError(message)
+  })
+
+  // The server is the single authority on whether a match can start (it is
+  // the side that knows the bot-filling rules), so surface its rejection
+  // rather than second-guessing it here.
+  netClient.on(MESSAGE_TYPE.ERROR, (msg) => {
+    lobby.showConnectionError(msg.message)
   })
 
   netClient.on(MESSAGE_TYPE.WELCOME, (msg) => {
@@ -333,10 +339,6 @@ const lobby = showLobby({
     connect(`ws://${address}`, name, lobby)
   },
   onStart() {
-    if (roster.size < MIN_PLAYERS_TO_START) {
-      lobby.showConnectionError(`São necessários pelo menos ${MIN_PLAYERS_TO_START} jogadores para iniciar.`)
-      return
-    }
     netClient.send(MESSAGE_TYPE.START, {})
   },
 })
