@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import { ROOM_LAYOUT } from './skeldRooms.js'
+import { TASK_LOCATIONS } from '../../shared/taskPool.js'
+import { VENT_LOCATIONS } from '../../shared/ventPool.js'
 
 const WALL_THICKNESS = 0.3
 const CORRIDOR_WIDTH = 4
@@ -7,7 +9,9 @@ const FLOOR_THICKNESS = 0.2
 
 const FLOOR_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x445566 })
 const WALL_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x8899aa })
-const INTERACTABLE_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xffcc00 })
+const TASK_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xffcc00 })
+const VENT_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x333333 })
+const EMERGENCY_BUTTON_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xdd2222 })
 
 // Returns where the straight line from `room` to `other` crosses room's own
 // boundary: which wall it exits through, and the coordinate along that wall.
@@ -138,11 +142,38 @@ function buildCorridors(group) {
   }
 }
 
-function addPlaceholderInteractable(group) {
-  const cafeteria = ROOM_LAYOUT.find((room) => room.id === 'cafeteria')
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), INTERACTABLE_MATERIAL)
-  mesh.position.set(cafeteria.center[0] + 2, 0.3, cafeteria.center[2] + 2)
-  mesh.userData.interactable = true
+function roomPosition(roomId, offset) {
+  const room = ROOM_LAYOUT.find((r) => r.id === roomId)
+  return [room.center[0] + offset[0], offset[1], room.center[2] + offset[2]]
+}
+
+function addTaskMarkers(group) {
+  return TASK_LOCATIONS.map((task) => {
+    const [x, y, z] = roomPosition(task.roomId, task.offset)
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), TASK_MATERIAL)
+    mesh.position.set(x, y + 0.3, z)
+    mesh.userData = { interactable: true, kind: 'task', taskId: task.id }
+    group.add(mesh)
+    return mesh
+  })
+}
+
+function addVentMarkers(group) {
+  return VENT_LOCATIONS.map((vent) => {
+    const [x, y, z] = roomPosition(vent.roomId, vent.offset)
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.2, 8), VENT_MATERIAL)
+    mesh.position.set(x, y + 0.1, z)
+    mesh.userData = { interactable: true, kind: 'vent', ventId: vent.id }
+    group.add(mesh)
+    return mesh
+  })
+}
+
+function addEmergencyButton(group) {
+  const [x, y, z] = roomPosition('cafeteria', [0, 0, -3])
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.3, 12), EMERGENCY_BUTTON_MATERIAL)
+  mesh.position.set(x, y + 0.4, z)
+  mesh.userData = { interactable: true, kind: 'emergencyButton' }
   group.add(mesh)
   return mesh
 }
@@ -155,9 +186,16 @@ export function buildSkeldMap() {
   }
   buildCorridors(group)
 
-  const interactable = addPlaceholderInteractable(group)
+  const taskMeshes = addTaskMarkers(group)
+  const ventMeshes = addVentMarkers(group)
+  const emergencyButton = addEmergencyButton(group)
+
   const cafeteria = ROOM_LAYOUT.find((room) => room.id === 'cafeteria')
   const spawnPoint = new THREE.Vector3(cafeteria.center[0], 1, cafeteria.center[2])
 
-  return { group, spawnPoint, interactables: [interactable] }
+  return {
+    group,
+    spawnPoint,
+    interactables: [...taskMeshes, ...ventMeshes, emergencyButton],
+  }
 }
