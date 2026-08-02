@@ -43,11 +43,14 @@ const UPPER_DECK = [
   { id: 'stairForeTop', deck: 1, center: [20, DECK_HEIGHT, -10], size: [6, 4, 8], theme: 'stairs', connections: ['laboratory', 'archive'] },
   { id: 'stairAftTop', deck: 1, center: [-24, DECK_HEIGHT, 33], size: [6, 4, 8], theme: 'stairs', connections: ['observatory'] },
 
-  { id: 'laboratory', deck: 1, center: [0, DECK_HEIGHT, 0], size: [10, 4, 10], theme: 'laboratory', connections: ['stairForeTop', 'observatory', 'archive', 'radioTower'] },
-  { id: 'observatory', deck: 1, center: [0, DECK_HEIGHT, 22], size: [12, 4, 10], theme: 'observatory', connections: ['stairAftTop', 'laboratory', 'hydroponics', 'radioTower'] },
-  { id: 'hydroponics', deck: 1, center: [22, DECK_HEIGHT, 22], size: [8, 4, 8], theme: 'greenhouse', connections: ['observatory'] },
-  { id: 'archive', deck: 1, center: [0, DECK_HEIGHT, -22], size: [8, 4, 8], theme: 'archive', connections: ['laboratory', 'stairForeTop'] },
-  { id: 'radioTower', deck: 1, center: [-24, DECK_HEIGHT, 8], size: [8, 4, 8], theme: 'servers', connections: ['laboratory', 'observatory'] },
+  { id: 'laboratory', deck: 1, center: [0, DECK_HEIGHT, 0], size: [10, 4, 10], theme: 'laboratory', connections: ['stairForeTop', 'observatory', 'archive', 'radioTower'], windows: ['east'] },
+  // The observatory faces the bow with a full glazed wall. It is the room
+  // the whole upper deck is named for; you should be able to stand in it and
+  // just look out.
+  { id: 'observatory', deck: 1, center: [0, DECK_HEIGHT, 22], size: [12, 4, 10], theme: 'observatory', connections: ['stairAftTop', 'laboratory', 'hydroponics', 'radioTower'], windows: ['north'] },
+  { id: 'hydroponics', deck: 1, center: [22, DECK_HEIGHT, 22], size: [8, 4, 8], theme: 'greenhouse', connections: ['observatory'], windows: ['east', 'north'] },
+  { id: 'archive', deck: 1, center: [0, DECK_HEIGHT, -22], size: [8, 4, 8], theme: 'archive', connections: ['laboratory', 'stairForeTop'], windows: ['south'] },
+  { id: 'radioTower', deck: 1, center: [-24, DECK_HEIGHT, 8], size: [8, 4, 8], theme: 'servers', connections: ['laboratory', 'observatory'], windows: ['west'] },
 ]
 
 export const ROOM_LAYOUT = [...LOWER_DECK, ...UPPER_DECK]

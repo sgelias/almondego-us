@@ -115,20 +115,100 @@ function wallSideAndCoord(room, point) {
   return { side: 'south', coord: x }
 }
 
+// Where a stair touches a room, as a flat (x, z) - the same shape
+// wallSideAndCoord expects from a corridor endpoint.
+function stairEndPoint(stair, t) {
+  const [x, , z] = stairPointAt(stair, t)
+  return [x, z]
+}
+
 function buildRoomFloor(collision, decor, room, floorRects) {
   const [width, height, depth] = room.size
   const [cx, , cz] = room.center
   addFloorSlab(collision, cx, cz, width, depth)
   floorRects.push({ xMin: cx - width / 2, xMax: cx + width / 2, zMin: cz - depth / 2, zMax: cz + depth / 2 })
-  addCeilingSlab(decor, cx, cz, width, depth, height)
+  // A stairwell shaft is open to the deck above by definition: the ramp
+  // climbs seven metres inside a room whose ceiling sits at four, so a
+  // ceiling here is something the stairs visibly pierce.
+  if (room.theme !== 'stairs') {
+    addCeilingSlab(decor, cx, cz, width, depth, height)
+  }
   addLightStrip(decor, cx, cz, width * 0.55, 0.35, height)
   addLightStrip(decor, cx, cz, 0.35, depth * 0.55, height)
+}
+
+// A window is a wall you can see through but not walk through. The pane
+// goes in the COLLISION group, not decor: transparency is about light, not
+// about being able to stroll out into vacuum.
+const GLASS_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0x9fd8ff,
+  transparent: true,
+  opacity: 0.13,
+  roughness: 0.05,
+  metalness: 0.1,
+  side: THREE.DoubleSide,
+})
+const MULLION_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x39434f, roughness: 0.6, metalness: 0.4 })
+
+function buildWindow(collision, decor, room, side) {
+  const [width, height, depth] = room.size
+  const [cx, , cz] = room.center
+  const horizontal = side === 'north' || side === 'south'
+  const span = (horizontal ? width : depth) - 1.6
+  const x = horizontal ? cx : cx + (side === 'east' ? width / 2 : -width / 2)
+  const z = horizontal ? cz + (side === 'north' ? depth / 2 : -depth / 2) : cz
+  const paneHeight = height - 1.4
+
+  const pane = new THREE.Mesh(
+    new THREE.BoxGeometry(horizontal ? span : 0.12, paneHeight, horizontal ? 0.12 : span),
+    GLASS_MATERIAL
+  )
+  pane.position.set(x, 0.7 + paneHeight / 2, z)
+  collision.add(pane)
+
+  // Frame and mullions, so it reads as a viewport rather than a hole where
+  // the wall failed to build.
+  for (const [w, h, d, oy] of [
+    [horizontal ? span : 0.2, 0.2, horizontal ? 0.2 : span, 0.7],
+    [horizontal ? span : 0.2, 0.2, horizontal ? 0.2 : span, 0.7 + paneHeight],
+  ]) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), MULLION_MATERIAL)
+    bar.position.set(x, oy, z)
+    decor.add(bar)
+  }
+  const mullions = Math.max(1, Math.round(span / 3))
+  for (let i = 1; i < mullions; i += 1) {
+    const t = (i / mullions - 0.5) * span
+    const bar = new THREE.Mesh(
+      new THREE.BoxGeometry(horizontal ? 0.16 : 0.2, paneHeight, horizontal ? 0.2 : 0.16),
+      MULLION_MATERIAL
+    )
+    bar.position.set(horizontal ? x + t : x, 0.7 + paneHeight / 2, horizontal ? z : z + t)
+    decor.add(bar)
+  }
 }
 
 function buildRoom(collision, decor, room, corridors) {
   const [width, height, depth] = room.size
   const [cx, , cz] = room.center
   const gapsBySide = { north: [], south: [], east: [], west: [] }
+
+  // Stairs need doorways too. This was missed the first time and the bug it
+  // produced was exactly what a player reports: you climb the whole flight
+  // and walk into a blank wall at the top. The climb test proved the player
+  // reached the upper deck's height; it never checked they could get off the
+  // ramp and into the room, which is the thing that actually matters.
+  for (const stair of SKELD_STAIRS) {
+    if (stair.lower === room.id) {
+      const { side, coord } = wallSideAndCoord(room, stairEndPoint(stair, 0))
+      gapsBySide[side].push(coord)
+    }
+    if (stair.upper === room.id) {
+      const { side, coord } = wallSideAndCoord(room, stairEndPoint(stair, 1))
+      gapsBySide[side].push(coord)
+    }
+  }
+
   for (const corridor of corridors) {
     if (corridor.roomAId === room.id) {
       const { side, coord } = wallSideAndCoord(room, corridor.points[0])
@@ -140,10 +220,28 @@ function buildRoom(collision, decor, room, corridors) {
     }
   }
 
+  // A windowed side is opened up exactly like a doorway, then glazed. The
+  // pane is what stops you walking out.
+  for (const side of room.windows ?? []) {
+    const horizontal = side === 'north' || side === 'south'
+    const centre = horizontal ? cx : cz
+    const span = (horizontal ? width : depth) - 1.6
+    gapsBySide[side].push(centre)
+    // buildWallWithGaps opens a door-sized gap around each coordinate; a
+    // window is wider, so a run of them covers the glazed span.
+    for (let offset = -span / 2; offset <= span / 2; offset += 1) {
+      gapsBySide[side].push(centre + offset)
+    }
+  }
+
   buildWallWithGaps(collision, cz + depth / 2, cx - width / 2, cx + width / 2, height, gapsBySide.north, 'x')
   buildWallWithGaps(collision, cz - depth / 2, cx - width / 2, cx + width / 2, height, gapsBySide.south, 'x')
   buildWallWithGaps(collision, cx + width / 2, cz - depth / 2, cz + depth / 2, height, gapsBySide.east, 'z')
   buildWallWithGaps(collision, cx - width / 2, cz - depth / 2, cz + depth / 2, height, gapsBySide.west, 'z')
+
+  for (const side of room.windows ?? []) {
+    buildWindow(collision, decor, room, side)
+  }
 
   // A dark band where wall meets floor breaks up the flat colour and gives
   // the eye a sense of scale while walking.

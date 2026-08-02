@@ -9,6 +9,7 @@ import { DECKS, DECK_HEIGHT, deckFloorY, deckOfRoom } from '../../shared/decks.j
 import { SKELD_STAIRS, stairPointAt } from '../../shared/skeldStairs.js'
 import * as THREE from 'three'
 import { createPlayerController } from '../player/playerController.js'
+import { createNavGraph } from '../../shared/navGraph.js'
 
 // `three` is a devDependency purely so these run. The browser still loads it
 // from the CDN import map (AD-003, no build step) - nothing here changes how
@@ -20,6 +21,8 @@ const FLOOR_COLOR = 0x3c4654
 const WALL_COLOR = 0x7c8b9e
 // buildStair's RAMP_MATERIAL - the one collidable thing allowed between decks.
 const RAMP_COLOR = 0x3a4453
+// addCeilingSlab's material.
+const CEILING_COLOR = 0x2a323d
 // playerController's PLAYER_RADIUS - the geometry has to admit a body of
 // this size, not just an infinitely thin point.
 const PLAYER_RADIUS = 0.35
@@ -192,6 +195,30 @@ test('a stair spans exactly one deck, and its collider is a ramp rather than ste
   }
 })
 
+test('no stairwell has a ceiling for its ramp to pierce', () => {
+  const { group } = buildSkeldMap()
+  group.updateMatrixWorld(true)
+  const ceilings = []
+  group.traverse((object) => {
+    if (!object.isMesh) return
+    if (object.material.color.getHex() !== CEILING_COLOR) return
+    object.geometry.computeBoundingBox()
+    ceilings.push(object.geometry.boundingBox.clone().applyMatrix4(object.matrixWorld))
+  })
+  assert.ok(ceilings.length > 0, 'no ceilings at all - this test is checking nothing')
+
+  for (const stair of SKELD_STAIRS) {
+    // Sample up the ramp and check nothing roofs it over below head height.
+    for (let step = 1; step < 10; step += 1) {
+      const [x, y, z] = stairPointAt(stair, step / 10)
+      const pierced = ceilings.find(
+        (b) => x >= b.min.x && x <= b.max.x && z >= b.min.z && z <= b.max.z && b.min.y > y && b.min.y < y + 2.2
+      )
+      assert.ok(!pierced, `${stair.id}: a ceiling cuts across the ramp at y=${y.toFixed(1)}`)
+    }
+  }
+})
+
 test('the collision octree builds without exhausting memory', () => {
   // L-013: overlapping geometry made this recurse to its depth limit and
   // OOM. It is not a timing assertion (that would be flaky) - simply
@@ -295,6 +322,7 @@ test('a player can walk up every staircase, and back down again', () => {
   const { collisionGroup, group } = buildSkeldMap()
   group.updateMatrixWorld(true)
   const octree = buildWorldOctree(collisionGroup)
+  const nav = createNavGraph(ROOM_LAYOUT, SKELD_CORRIDORS)
   // handleMouseMove ignores input unless the pointer is locked.
   global.document = { pointerLockElement: {} }
 
@@ -313,13 +341,25 @@ test('a player can walk up every staircase, and back down again', () => {
     player.handleKeyDown({ code: 'KeyW' })
 
     let peak = -Infinity
-    for (let i = 0; i < 15 * 60; i += 1) {
+    // Long enough to climb AND keep walking off the top. Height alone is not
+    // the property that matters: the first version of this test asserted only
+    // that the player got high enough, and passed while every staircase
+    // delivered you into a blank wall with no doorway - which is precisely
+    // what a player reported. Arriving *inside the room* is the real check.
+    for (let i = 0; i < 30 * 60; i += 1) {
       player.update(1 / 60)
       peak = Math.max(peak, camera.position.y)
     }
     assert.ok(
       peak > DECK_HEIGHT,
       `${stair.id}: walking up the stairs only reached y=${peak.toFixed(2)}, short of the upper deck at ${DECK_HEIGHT}`
+    )
+    const arrived = nav.roomIdAt([camera.position.x, camera.position.y, camera.position.z])
+    assert.equal(
+      arrived,
+      stair.upper,
+      `${stair.id}: the climb ended in ${arrived ?? 'no room at all'} rather than ${stair.upper} - ` +
+        'the player got up the stairs but could not get off them'
     )
 
     // And down: from the top landing, walking back the other way must not
@@ -338,6 +378,51 @@ test('a player can walk up every staircase, and back down again', () => {
     }
     assert.ok(lowest > -1, `${stair.id}: walking down fell through the world to y=${lowest.toFixed(2)}`)
   }
+  } finally {
+    delete global.document
+  }
+})
+
+// A window is the one place the wall is deliberately open, so it is the one
+// place worth proving you still cannot get out. The pane is thin; a capsule
+// moving at sprint speed is exactly what tunnels through thin geometry.
+test('you can see out of a window but not walk out of one', () => {
+  const { collisionGroup, group } = buildSkeldMap()
+  group.updateMatrixWorld(true)
+  const octree = buildWorldOctree(collisionGroup)
+  global.document = { pointerLockElement: {} }
+
+  try {
+    for (const room of ROOM_LAYOUT.filter((r) => r.windows?.length)) {
+      for (const side of room.windows) {
+        const [width, , depth] = room.size
+        const [cx, , cz] = room.center
+        const horizontal = side === 'north' || side === 'south'
+        const sign = side === 'north' || side === 'east' ? 1 : -1
+        // Start inside, a couple of metres back, facing the glass.
+        const start = new THREE.Vector3(
+          horizontal ? cx : cx + sign * (width / 2 - 2.5),
+          deckFloorY(deckOfRoom(room)) + 1,
+          horizontal ? cz + sign * (depth / 2 - 2.5) : cz
+        )
+        const camera = new THREE.PerspectiveCamera()
+        const player = createPlayerController(camera, octree, start)
+        const yaw = { north: Math.PI, south: 0, east: -Math.PI / 2, west: Math.PI / 2 }[side]
+        player.handleMouseMove({ movementX: -yaw / 0.0025, movementY: 0 })
+        player.handleKeyDown({ code: 'KeyW' })
+        player.handleKeyDown({ code: 'ShiftLeft' }) // sprinting: the tunnelling case
+        for (let i = 0; i < 8 * 60; i += 1) player.update(1 / 60)
+
+        const outside = horizontal
+          ? sign * (camera.position.z - cz) > depth / 2
+          : sign * (camera.position.x - cx) > width / 2
+        assert.ok(
+          !outside,
+          `${room.id}'s ${side} window let a sprinting player straight out into space ` +
+            `(ended at ${camera.position.x.toFixed(1)}, ${camera.position.z.toFixed(1)})`
+        )
+      }
+    }
   } finally {
     delete global.document
   }

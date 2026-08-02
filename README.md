@@ -25,7 +25,7 @@ que serviu a página, e quem entrar primeiro vira o anfitrião — é quem vê o
 botão **Iniciar Partida**.
 
 ```bash
-npm test     # 182 testes
+npm test     # 184 testes
 npm run server  # só o servidor de partida
 npm run web     # só o servidor do cliente
 ```
@@ -71,7 +71,8 @@ segundo andar com cinco salas e objetivos próprios:
 | Arquivo | Arquivar fichas em ordem alfabética |
 | Torre de Rádio | Descobrir o número que continua o padrão |
 
-Subir leva uns cinco segundos, num poço com uma saída só — quem te viu ir
+As salas do deck superior têm janelas: dá para parar no Observatório e olhar
+as estrelas. Subir leva uns cinco segundos, num poço com uma saída só — quem te viu ir
 para a escada sabe onde você está. Você não enxerga entre andares, e o mapa
 mostra só o deck em que você está.
 

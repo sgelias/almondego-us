@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
 import { buildSkeldMap } from './map/skeldMap.js'
+import { createStarfield } from './map/starfield.js'
 import { createNavGraph } from '../shared/navGraph.js'
 import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
 import { SKELD_CORRIDORS } from '../shared/skeldCorridors.js'
@@ -66,11 +67,18 @@ labelRenderer.domElement.style.pointerEvents = 'none'
 document.body.appendChild(labelRenderer.domElement)
 
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x0a0d12)
+// Near-black rather than pure black: deep space with a hint of colour reads
+// as distance, where #000 reads as "the renderer failed".
+scene.background = new THREE.Color(0x04060c)
 // Now that rooms have ceilings, sightlines down long corridors are the main
 // depth cue. A little fog makes distance readable and hides the far end of
 // the map without a hard clip.
-scene.fog = new THREE.Fog(0x0a0d12, 18, 60)
+scene.fog = new THREE.Fog(0x04060c, 18, 60)
+
+// Space, seen through the science deck's windows. The starfield sets
+// fog: false and rides with the camera - see starfield.js.
+const starfield = createStarfield()
+scene.add(starfield.group)
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500)
 
@@ -832,6 +840,7 @@ function startGame(lobby) {
     const deltaTime = clock.getDelta()
 
     player.update(deltaTime)
+    starfield.follow(camera)
     remotePlayers.update(deltaTime)
     // Visibility must be resolved before interactSystem raycasts, so a
     // player you cannot see is also not a valid kill target.
