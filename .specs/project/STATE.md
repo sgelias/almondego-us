@@ -3,7 +3,11 @@
 **Last Updated:** 2026-08-02
 **Current Work:** v1 (all 3 milestones) is complete and playtest-confirmed. The user then asked for three things, in order: (1) bots filling empty slots so the game is playable solo, (2) Portuguese UI, (3) a visual/aesthetic overhaul. Mid-request they also reported floor holes and nonsensical room shapes (a real structural bug - see AD-006, L-012) and then an infinite page load (a follow-on Octree crash caused by that same fix - see L-013).
 
-Done so far: map geometry rebuilt and verified; UI fully translated to Portuguese; `bot-players` feature specified, designed, and implemented (T1-T6) - a solo human now gets a full 6-player match with 5 bots that path the map, do tasks, kill, vent, call meetings, and vote from witness-limited memory. Verified via 69 unit tests plus repeated full-match smoke runs. **Still pending: a human browser playtest of the bot match, and then the aesthetics milestone** (which is also the natural home for the modular/on-demand map loading the user asked about - `shared/skeldRooms.js` + `shared/corridorRouting.js` + `shared/skeldCorridors.js` already make a second arena mostly a data-only addition).
+Done so far: map geometry rebuilt and verified; UI fully translated to Portuguese; `bot-players` implemented (T1-T6) - a solo human gets a full 6-player match with 5 bots that path the map, do tasks, kill, vent, call meetings, and vote from witness-limited memory. First pass of the aesthetics work is also in: crewmate-shaped avatars with server-assigned unique colours, ceilings + emissive light strips + floor trim, taller rooms (3 → 4), consoles/vent grates/button pedestal instead of bare primitives, and scene fog. See AD-007 for the collision/decor split that makes further décor safe.
+
+**Pending:** a human browser playtest of everything since the last confirmed one (bots + the whole aesthetic pass - none of the visual work can be verified from here). Then: room-specific décor per `theme` (would also close out the modular/on-demand arena loading the user asked about, since `shared/skeldRooms.js` + `corridorRouting.js` + `skeldCorridors.js` already make a second arena a data-only addition).
+
+**Known pacing observation, not yet acted on:** a meeting freezes everyone for 35s (15 discussion + 20 voting), and bots report every death they learn about, so a match can spend most of its time in meetings. Worth revisiting with the user rather than silently retuning core-game-loop's constants.
 
 ---
 
@@ -164,6 +168,13 @@ None currently blocking. Next planned work: Specify/Design/Tasks for the `bot-pl
 **Problem:** Two separate false readings came from the harness, not the code. (1) It reported "only 1 of 5 bots ever moved" while the same run showed bots completing tasks all over the map - it was measuring the delta between *consecutive* `state` messages, which at 15 Hz and 4.5 u/s is ~0.3 units, below its own 0.5 threshold; total displacement was the right measure. (2) More seriously, the fake client never sent `state` messages at all, so the server had no position for it - the human was invisible to bot sensing, could not be killed, and never counted as a witness. Every conclusion drawn about impostor behaviour up to that point had been drawn from a world containing no human.
 **Solution:** Measure displacement from first-seen position, and make the test client send `state` at 15 Hz exactly like `main.js` does. Both fixes changed the observed outcome immediately (5/5 bots moving; the bot impostor killing the human at t=16s).
 **Prevents:** A stub client is a model of a real client, and any behaviour the real client has that the stub omits is a hole the system under test will silently fall through. Before trusting a negative result from a harness, check that the harness actually performs the behaviours the code under test depends on - "the feature is broken" and "my fake client doesn't do the one thing that triggers the feature" look identical from the outside.
+
+### AD-007: Map geometry is split into a collision group and a decor group (2026-08-02)
+
+**Decision:** `buildSkeldMap()` returns `{ group, collisionGroup, ... }`. Only floors and walls go into `collisionGroup`; ceilings, trim, light strips, consoles, vent grates and the emergency-button pedestal are decor. `buildWorldOctree` is handed `collisionGroup`, never the whole scene.
+**Reason:** Ceilings are structurally the same hazard as L-013's corridors - a room ceiling and a corridor ceiling necessarily overlap at every junction, and overlapping geometry is exactly what makes the Octree recurse to its depth limit and exhaust memory. Keeping decor out of the octree makes that failure impossible rather than something each new prop has to be careful about. Players cannot reach a 4-unit ceiling anyway.
+**Trade-off:** Two groups to keep straight when adding geometry; a prop that *should* block movement now has to be deliberately added to `collisionGroup`.
+**Impact:** Décor can be added freely from here without any octree risk. Measured: 318 decor meshes added, octree build unchanged at 527ms/242MB versus the 550ms/240MB baseline. Any future prop work (and the modular-arena loading the user asked about) inherits this safety property.
 
 ---
 

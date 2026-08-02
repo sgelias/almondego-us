@@ -6,18 +6,59 @@ import { VENT_LOCATIONS } from '../../shared/ventPool.js'
 
 const WALL_THICKNESS = 0.3
 const FLOOR_THICKNESS = 0.2
+const CEILING_THICKNESS = 0.2
 const WALL_EPSILON = 1e-6
 
-const FLOOR_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x445566 })
-const WALL_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x8899aa })
-const TASK_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xffcc00 })
-const VENT_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x333333 })
-const EMERGENCY_BUTTON_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xdd2222 })
+const FLOOR_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x3c4654, roughness: 0.9 })
+const WALL_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x7c8b9e, roughness: 0.75 })
+const CEILING_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x2a323d, roughness: 0.95 })
+// Emissive strips do the atmospheric work that per-room point lights would
+// otherwise do, at zero per-fragment lighting cost - every MeshStandardMaterial
+// evaluates every light in the scene, so 14 room lights would be paid for on
+// every surface in view.
+const LIGHT_STRIP_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0xdff1ff,
+  emissive: 0xbfe4ff,
+  emissiveIntensity: 1.4,
+})
+const TRIM_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x4d5a6b, roughness: 0.6, metalness: 0.3 })
+const TASK_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0xffcc00,
+  emissive: 0xffaa00,
+  emissiveIntensity: 0.7,
+})
+const VENT_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.5, metalness: 0.6 })
+const EMERGENCY_BUTTON_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0xdd2222,
+  emissive: 0x8a0f0f,
+  emissiveIntensity: 0.9,
+})
 
 function addFloorSlab(group, centerX, centerZ, width, depth) {
   const geometry = new THREE.BoxGeometry(width, FLOOR_THICKNESS, depth)
   const mesh = new THREE.Mesh(geometry, FLOOR_MATERIAL)
   mesh.position.set(centerX, -FLOOR_THICKNESS / 2, centerZ)
+  group.add(mesh)
+}
+
+// Ceilings, trim and light strips are decor, never collision. Two reasons:
+// the player can't reach them anyway, and - more importantly - room and
+// corridor ceilings necessarily overlap at every junction, which is exactly
+// the overlapping-geometry pattern that made the collision Octree recurse to
+// its depth limit and exhaust memory (STATE.md L-013). Keeping them out of
+// the octree makes that failure structurally impossible rather than
+// something to be careful about.
+function addCeilingSlab(group, centerX, centerZ, width, depth, height) {
+  const geometry = new THREE.BoxGeometry(width, CEILING_THICKNESS, depth)
+  const mesh = new THREE.Mesh(geometry, CEILING_MATERIAL)
+  mesh.position.set(centerX, height + CEILING_THICKNESS / 2, centerZ)
+  group.add(mesh)
+}
+
+function addLightStrip(group, centerX, centerZ, width, depth, height) {
+  const geometry = new THREE.BoxGeometry(width, 0.06, depth)
+  const mesh = new THREE.Mesh(geometry, LIGHT_STRIP_MATERIAL)
+  mesh.position.set(centerX, height - 0.05, centerZ)
   group.add(mesh)
 }
 
@@ -69,11 +110,17 @@ function wallSideAndCoord(room, point) {
   return { side: 'south', coord: x }
 }
 
-function buildRoom(group, room, corridors) {
+function buildRoom(collision, decor, room, corridors) {
   const [width, height, depth] = room.size
   const [cx, , cz] = room.center
 
-  addFloorSlab(group, cx, cz, width, depth)
+  addFloorSlab(collision, cx, cz, width, depth)
+  addCeilingSlab(decor, cx, cz, width, depth, height)
+
+  // A cross of ceiling strips reads as installed lighting and gives each
+  // room a bright anchor without adding a real light source.
+  addLightStrip(decor, cx, cz, width * 0.55, 0.35, height)
+  addLightStrip(decor, cx, cz, 0.35, depth * 0.55, height)
 
   const gapsBySide = { north: [], south: [], east: [], west: [] }
   for (const corridor of corridors) {
@@ -87,10 +134,23 @@ function buildRoom(group, room, corridors) {
     }
   }
 
-  buildWallWithGaps(group, cz + depth / 2, cx - width / 2, cx + width / 2, height, gapsBySide.north, 'x')
-  buildWallWithGaps(group, cz - depth / 2, cx - width / 2, cx + width / 2, height, gapsBySide.south, 'x')
-  buildWallWithGaps(group, cx + width / 2, cz - depth / 2, cz + depth / 2, height, gapsBySide.east, 'z')
-  buildWallWithGaps(group, cx - width / 2, cz - depth / 2, cz + depth / 2, height, gapsBySide.west, 'z')
+  buildWallWithGaps(collision, cz + depth / 2, cx - width / 2, cx + width / 2, height, gapsBySide.north, 'x')
+  buildWallWithGaps(collision, cz - depth / 2, cx - width / 2, cx + width / 2, height, gapsBySide.south, 'x')
+  buildWallWithGaps(collision, cx + width / 2, cz - depth / 2, cz + depth / 2, height, gapsBySide.east, 'z')
+  buildWallWithGaps(collision, cx - width / 2, cz - depth / 2, cz + depth / 2, height, gapsBySide.west, 'z')
+
+  // A dark band where wall meets floor breaks up the flat colour and gives
+  // the eye a sense of scale while walking.
+  for (const [w, d, ox, oz] of [
+    [width, WALL_THICKNESS, 0, depth / 2],
+    [width, WALL_THICKNESS, 0, -depth / 2],
+    [WALL_THICKNESS, depth, width / 2, 0],
+    [WALL_THICKNESS, depth, -width / 2, 0],
+  ]) {
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(w, 0.18, d), TRIM_MATERIAL)
+    trim.position.set(cx + ox, 0.09, cz + oz)
+    decor.add(trim)
+  }
 }
 
 // Three.js's Octree addon subdivides its bounding volume evenly on all 3
@@ -111,7 +171,7 @@ const MAX_SEGMENT_LENGTH = CORRIDOR_WIDTH * 2
 // longer than MAX_SEGMENT_LENGTH. Direction is inferred from which
 // coordinate is constant between the two points (both are guaranteed equal
 // on one axis - see corridorRouting.js).
-function buildCorridorSegment(group, x1, z1, x2, z2, height) {
+function buildCorridorSegment(collision, decor, x1, z1, x2, z2, height) {
   const length = Math.hypot(x2 - x1, z2 - z1)
   if (length < 0.01) return
   const runsAlongX = z1 === z2
@@ -134,24 +194,44 @@ function buildCorridorSegment(group, x1, z1, x2, z2, height) {
       : new THREE.BoxGeometry(CORRIDOR_WIDTH, FLOOR_THICKNESS, chunkLength)
     const floor = new THREE.Mesh(floorGeometry, FLOOR_MATERIAL)
     floor.position.set(midX, -FLOOR_THICKNESS / 2, midZ)
-    group.add(floor)
+    collision.add(floor)
+
+    addCeilingSlab(
+      decor,
+      midX,
+      midZ,
+      runsAlongX ? chunkLength : CORRIDOR_WIDTH,
+      runsAlongX ? CORRIDOR_WIDTH : chunkLength,
+      height
+    )
+    // A continuous glowing line down the middle of every corridor - the
+    // strongest single cue that these are built passageways rather than
+    // gaps between boxes.
+    addLightStrip(
+      decor,
+      midX,
+      midZ,
+      runsAlongX ? chunkLength * 0.9 : 0.25,
+      runsAlongX ? 0.25 : chunkLength * 0.9,
+      height
+    )
 
     if (runsAlongX) {
       const wallGeometry = new THREE.BoxGeometry(chunkLength, height, WALL_THICKNESS)
       const wallNorth = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
       wallNorth.position.set(midX, height / 2, midZ + CORRIDOR_WIDTH / 2)
-      group.add(wallNorth)
+      collision.add(wallNorth)
       const wallSouth = new THREE.Mesh(wallGeometry.clone(), WALL_MATERIAL)
       wallSouth.position.set(midX, height / 2, midZ - CORRIDOR_WIDTH / 2)
-      group.add(wallSouth)
+      collision.add(wallSouth)
     } else {
       const wallGeometry = new THREE.BoxGeometry(WALL_THICKNESS, height, chunkLength)
       const wallEast = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
       wallEast.position.set(midX + CORRIDOR_WIDTH / 2, height / 2, midZ)
-      group.add(wallEast)
+      collision.add(wallEast)
       const wallWest = new THREE.Mesh(wallGeometry.clone(), WALL_MATERIAL)
       wallWest.position.set(midX - CORRIDOR_WIDTH / 2, height / 2, midZ)
-      group.add(wallWest)
+      collision.add(wallWest)
     }
   }
 }
@@ -247,62 +327,108 @@ function roomPosition(roomId, offset) {
   return [room.center[0] + offset[0], offset[1], room.center[2] + offset[2]]
 }
 
+const CONSOLE_BODY_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x55606e, roughness: 0.6, metalness: 0.4 })
+
+// A waist-high console with a glowing screen angled toward the player -
+// legible as "something to operate" from across the room, which a floating
+// cube was not. The screen carries the interaction userData because it is
+// the part a player naturally aims at.
 function addTaskMarkers(group) {
   return TASK_LOCATIONS.map((task) => {
     const [x, y, z] = roomPosition(task.roomId, task.offset)
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), TASK_MATERIAL)
-    mesh.position.set(x, y + 0.3, z)
-    mesh.userData = { interactable: true, kind: 'task', taskId: task.id }
-    group.add(mesh)
-    return mesh
-  })
+    const userData = { interactable: true, kind: 'task', taskId: task.id }
+
+    const cabinet = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.5), CONSOLE_BODY_MATERIAL)
+    cabinet.position.set(x, y + 0.45, z)
+    cabinet.userData = userData
+    group.add(cabinet)
+
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.5, 0.08), TASK_MATERIAL)
+    screen.position.set(x, y + 1.0, z)
+    screen.rotation.x = -0.35
+    screen.userData = userData
+    group.add(screen)
+
+    return [cabinet, screen]
+  }).flat()
 }
 
+// A recessed floor grate with visible slats, rather than a plain disc.
 function addVentMarkers(group) {
   return VENT_LOCATIONS.map((vent) => {
     const [x, y, z] = roomPosition(vent.roomId, vent.offset)
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.2, 8), VENT_MATERIAL)
-    mesh.position.set(x, y + 0.1, z)
-    mesh.userData = { interactable: true, kind: 'vent', ventId: vent.id }
-    group.add(mesh)
-    return mesh
+    const userData = { interactable: true, kind: 'vent', ventId: vent.id }
+
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.12, 1.1), VENT_MATERIAL)
+    frame.position.set(x, y + 0.06, z)
+    frame.userData = userData
+    group.add(frame)
+
+    for (let i = -1; i <= 1; i += 1) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.14), TRIM_MATERIAL)
+      slat.position.set(x, y + 0.14, z + i * 0.3)
+      slat.userData = userData
+      group.add(slat)
+    }
+    return frame
   })
 }
 
+// A pedestal with a big red dome on top - unmistakable across the cafeteria.
 function addEmergencyButton(group) {
   const [x, y, z] = roomPosition('cafeteria', [0, 0, -3])
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.3, 12), EMERGENCY_BUTTON_MATERIAL)
-  mesh.position.set(x, y + 0.4, z)
-  mesh.userData = { interactable: true, kind: 'emergencyButton' }
-  group.add(mesh)
-  return mesh
+  const userData = { interactable: true, kind: 'emergencyButton' }
+
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, 0.9, 16), CONSOLE_BODY_MATERIAL)
+  pedestal.position.set(x, y + 0.45, z)
+  pedestal.userData = userData
+  group.add(pedestal)
+
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.42, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), EMERGENCY_BUTTON_MATERIAL)
+  dome.position.set(x, y + 0.9, z)
+  dome.userData = userData
+  group.add(dome)
+
+  return pedestal
 }
 
 export function buildSkeldMap() {
   const group = new THREE.Group()
+  // Only floors and walls go in `collision`; everything purely visual goes in
+  // `decor`. The octree is built from `collision` alone, which keeps ceilings
+  // (which necessarily overlap at every room/corridor junction) away from the
+  // spatial subdivision that overlapping geometry breaks - see L-013.
+  const collision = new THREE.Group()
+  const decor = new THREE.Group()
+  group.add(collision)
+  group.add(decor)
+
   const corridors = SKELD_CORRIDORS
   const roomsById = new Map(ROOM_LAYOUT.map((room) => [room.id, room]))
 
   for (const room of ROOM_LAYOUT) {
-    buildRoom(group, room, corridors)
+    buildRoom(collision, decor, room, corridors)
   }
   const { segments, bends } = collectCorridorGeometry(corridors, roomsById)
   for (const segment of segments) {
-    buildCorridorSegment(group, segment.x1, segment.z1, segment.x2, segment.z2, segment.height)
+    buildCorridorSegment(collision, decor, segment.x1, segment.z1, segment.x2, segment.z2, segment.height)
   }
   for (const bend of bends) {
-    buildBendPatch(group, bend.x, bend.z)
+    buildBendPatch(collision, bend.x, bend.z)
   }
 
-  const taskMeshes = addTaskMarkers(group)
-  const ventMeshes = addVentMarkers(group)
-  const emergencyButton = addEmergencyButton(group)
+  const taskMeshes = addTaskMarkers(decor)
+  const ventMeshes = addVentMarkers(decor)
+  const emergencyButton = addEmergencyButton(decor)
 
   const cafeteria = ROOM_LAYOUT.find((room) => room.id === 'cafeteria')
   const spawnPoint = new THREE.Vector3(cafeteria.center[0], 1, cafeteria.center[2])
 
   return {
     group,
+    // Handed to buildWorldOctree instead of `group`: decor must never reach
+    // the collision structure.
+    collisionGroup: collision,
     spawnPoint,
     interactables: [...taskMeshes, ...ventMeshes, emergencyButton],
   }

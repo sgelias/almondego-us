@@ -35,7 +35,10 @@ export function createInteractSystem(camera, getInteractables, getPromptText) {
   return {
     update() {
       raycaster.setFromCamera(SCREEN_CENTER, camera)
-      const hits = raycaster.intersectObjects(getInteractables(), false)
+      // Recursive: player avatars are multi-part groups (body/visor/legs),
+      // so a hit lands on a child mesh. Every part carries the same
+      // userData, so whichever one is reported is equally valid.
+      const hits = raycaster.intersectObjects(getInteractables(), true)
       currentTarget = hits.length > 0 ? hits[0].object : null
 
       const text = currentTarget

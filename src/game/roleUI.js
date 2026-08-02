@@ -38,8 +38,9 @@ export function createRoleUI() {
   let progressLine = null
 
   return {
-    showRole(role, taskLabelsById) {
+    showRole(role, taskLabelsById, color) {
       roleBanner.textContent = role === 'impostor' ? 'Você é o Impostor' : 'Você é um Tripulante'
+      roleBanner.style.color = role === 'impostor' ? '#ff5555' : '#8fd3ff'
       roleBanner.style.display = 'flex'
       setTimeout(() => {
         roleBanner.style.display = 'none'
@@ -50,7 +51,19 @@ export function createRoleUI() {
 
       const title = document.createElement('div')
       title.textContent = role === 'impostor' ? 'Impostor' : 'Tarefas'
+      title.style.fontWeight = '600'
+      title.style.marginBottom = '0.35rem'
       hud.appendChild(title)
+
+      // First person means you never see your own avatar, so the HUD is the
+      // only place you can learn which colour the others see you as.
+      if (Number.isInteger(color)) {
+        const swatch = document.createElement('div')
+        swatch.textContent = '● você'
+        swatch.style.color = `#${color.toString(16).padStart(6, '0')}`
+        swatch.style.marginBottom = '0.35rem'
+        hud.appendChild(swatch)
+      }
 
       if (role !== 'impostor') {
         for (const [taskId, label] of Object.entries(taskLabelsById ?? {})) {

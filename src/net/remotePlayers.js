@@ -1,34 +1,31 @@
 import * as THREE from 'three'
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
+import { createAvatar, disposeAvatar, EYE_TO_FEET } from './playerAvatar.js'
 
-const CAPSULE_RADIUS = 0.35
-const CAPSULE_HEIGHT = 1.0
 const LERP_RATE = 10
 
-// Network "position" is the sender's camera/eye position (see main.js), which
-// sits at the top of their capsule. This mesh's CapsuleGeometry is centered on
-// its own origin, so it must be drawn EYE_TO_CENTER_OFFSET below the eye to
-// land on the floor instead of floating.
-const EYE_TO_CENTER_OFFSET = CAPSULE_HEIGHT / 2
-
-const AVATAR_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x33aaff })
-
-function createLabel(name) {
+function createLabel(name, color) {
   const div = document.createElement('div')
   div.textContent = name
-  div.style.color = '#fff'
+  // Matching the avatar's body colour makes "who is that" readable at a
+  // glance without having to get close enough to see the model.
+  div.style.color = `#${color.toString(16).padStart(6, '0')}`
   div.style.fontFamily = 'sans-serif'
   div.style.fontSize = '0.85rem'
-  div.style.textShadow = '0 0 3px #000'
+  div.style.fontWeight = '600'
+  div.style.textShadow = '0 0 4px #000, 0 0 2px #000'
   div.style.pointerEvents = 'none'
 
   const label = new CSS2DObject(div)
-  label.position.set(0, CAPSULE_HEIGHT / 2 + CAPSULE_RADIUS + 0.4, 0)
+  label.position.set(0, 2.1, 0)
   return label
 }
 
-function toMeshPosition(position) {
-  return [position[0], position[1] - EYE_TO_CENTER_OFFSET, position[2]]
+// Network "position" is the sender's camera/eye position (see main.js). The
+// avatar is modelled standing on its own origin, so the group is dropped
+// EYE_TO_FEET below the reported eye to put its feet on the floor.
+function toFeetPosition(position) {
+  return [position[0], position[1] - EYE_TO_FEET, position[2]]
 }
 
 // SPEC_DEVIATION: design.md's signature was createRemotePlayers(scene, labelRenderer).
@@ -37,26 +34,21 @@ function toMeshPosition(position) {
 export function createRemotePlayers(scene) {
   const players = new Map()
 
-  function upsert(id, name, position, rotationY, seq) {
+  function upsert(id, name, colorIndex, position, rotationY, seq) {
     let entry = players.get(id)
     if (!entry) {
-      const mesh = new THREE.Mesh(
-        new THREE.CapsuleGeometry(CAPSULE_RADIUS, CAPSULE_HEIGHT, 4, 8),
-        AVATAR_MATERIAL
-      )
-      const label = createLabel(name)
-      mesh.add(label)
       // Tagged as an interactable "player" so an Impostor can target this
-      // avatar for a kill via interactSystem's raycast (added for Milestone 3;
-      // harmless for Crewmates, who are never allowed to send a kill message).
-      mesh.userData = { interactable: true, kind: 'player', killTargetId: id }
+      // avatar for a kill via interactSystem's raycast.
+      const { group, color } = createAvatar(id, colorIndex, { interactable: true, kind: 'player', killTargetId: id })
+      const label = createLabel(name, color)
+      group.add(label)
 
-      const [x, y, z] = toMeshPosition(position)
-      mesh.position.set(x, y, z)
-      scene.add(mesh)
+      const [x, y, z] = toFeetPosition(position)
+      group.position.set(x, y, z)
+      scene.add(group)
 
       entry = {
-        mesh,
+        group,
         label,
         lastSeq: -1,
         target: new THREE.Vector3(x, y, z),
@@ -67,7 +59,7 @@ export function createRemotePlayers(scene) {
 
     if (seq <= entry.lastSeq) return
     entry.lastSeq = seq
-    const [x, y, z] = toMeshPosition(position)
+    const [x, y, z] = toFeetPosition(position)
     entry.target.set(x, y, z)
     entry.targetRotationY = rotationY
   }
@@ -75,23 +67,26 @@ export function createRemotePlayers(scene) {
   function remove(id) {
     const entry = players.get(id)
     if (!entry) return
-    entry.mesh.remove(entry.label)
+    // A CSS2DObject only cleans up its DOM element on its own 'removed'
+    // event, which removing an ancestor does not fire - it has to be
+    // detached directly (see STATE.md L-004).
+    entry.group.remove(entry.label)
     entry.label.element.remove()
-    scene.remove(entry.mesh)
-    entry.mesh.geometry.dispose()
+    scene.remove(entry.group)
+    disposeAvatar(entry.group)
     players.delete(id)
   }
 
   function update(deltaTime) {
     const t = 1 - Math.exp(-LERP_RATE * deltaTime)
     for (const entry of players.values()) {
-      entry.mesh.position.lerp(entry.target, t)
-      entry.mesh.rotation.y += (entry.targetRotationY - entry.mesh.rotation.y) * t
+      entry.group.position.lerp(entry.target, t)
+      entry.group.rotation.y += (entry.targetRotationY - entry.group.rotation.y) * t
     }
   }
 
   function getMeshes() {
-    return [...players.values()].map((entry) => entry.mesh)
+    return [...players.values()].map((entry) => entry.group)
   }
 
   return { upsert, remove, update, getMeshes }

@@ -33,6 +33,20 @@ function resolveName(requestedName, players) {
   return `${name} (${suffix})`
 }
 
+// Size of the crewmate palette in src/net/playerAvatar.js.
+const COLOR_COUNT = 12
+
+// Assigned here, next to name resolution, for the same reason names are:
+// only the server sees every player, so only the server can guarantee no two
+// of them collide. Clients just render the index they are told.
+function resolveColorIndex(players) {
+  const taken = new Set([...players.values()].map((p) => p.colorIndex))
+  for (let i = 0; i < COLOR_COUNT; i += 1) {
+    if (!taken.has(i)) return i
+  }
+  return taken.size % COLOR_COUNT
+}
+
 function spawnPoint() {
   const cafeteria = ROOM_LAYOUT.find((room) => room.id === 'cafeteria')
   return [cafeteria.center[0], 1.35, cafeteria.center[2]]
@@ -126,8 +140,9 @@ function startMatch(socket) {
   // Announced as ordinary joins so every client's roster, name labels, and
   // remote-avatar rendering treat bots exactly like humans (BOT-03).
   for (const { id, name } of createdBots) {
-    players.set(id, { name, isBot: true })
-    broadcastToAll(MESSAGE_TYPE.PLAYER_JOINED, { id, name })
+    const colorIndex = resolveColorIndex(players)
+    players.set(id, { name, colorIndex, isBot: true })
+    broadcastToAll(MESSAGE_TYPE.PLAYER_JOINED, { id, name, colorIndex })
   }
 
   broadcastToAll(MESSAGE_TYPE.START, {})
@@ -149,19 +164,24 @@ wss.on('connection', (socket) => {
       case MESSAGE_TYPE.JOIN: {
         const id = randomUUID()
         const name = resolveName(message.name, players)
+        const colorIndex = resolveColorIndex(players)
         const isHost = hostId === null
         if (isHost) hostId = id
 
-        players.set(id, { name })
+        players.set(id, { name, colorIndex })
         socketsByPlayerId.set(id, socket)
         socket.playerId = id
 
         send(socket, MESSAGE_TYPE.WELCOME, {
           playerId: id,
           isHost,
-          players: [...players.entries()].map(([playerId, player]) => ({ id: playerId, name: player.name })),
+          players: [...players.entries()].map(([playerId, player]) => ({
+            id: playerId,
+            name: player.name,
+            colorIndex: player.colorIndex,
+          })),
         })
-        broadcastToOthers(socket, MESSAGE_TYPE.PLAYER_JOINED, { id, name })
+        broadcastToOthers(socket, MESSAGE_TYPE.PLAYER_JOINED, { id, name, colorIndex })
         return
       }
 

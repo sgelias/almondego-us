@@ -8,6 +8,7 @@ import { createInteractSystem } from './interaction/interactSystem.js'
 import { showLobby } from './lobby/lobbyScreen.js'
 import { createNetClient, CONNECTED, CONNECTION_ERROR } from './net/client.js'
 import { createRemotePlayers } from './net/remotePlayers.js'
+import { colorForIndex } from './net/playerAvatar.js'
 import { createRoleUI } from './game/roleUI.js'
 import { createTaskInteraction } from './game/taskInteraction.js'
 import { createMeetingUI } from './game/meetingUI.js'
@@ -32,24 +33,32 @@ labelRenderer.domElement.style.pointerEvents = 'none'
 document.body.appendChild(labelRenderer.domElement)
 
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x111318)
+scene.background = new THREE.Color(0x0a0d12)
+// Now that rooms have ceilings, sightlines down long corridors are the main
+// depth cue. A little fog makes distance readable and hides the far end of
+// the map without a hard clip.
+scene.fog = new THREE.Fog(0x0a0d12, 18, 60)
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500)
 
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0x222233, 1.2)
+const hemiLight = new THREE.HemisphereLight(0xb8cfe6, 0x2a2f3a, 1.1)
 scene.add(hemiLight)
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8)
+// No shadow maps and no per-room lights: every MeshStandardMaterial fragment
+// evaluates every light in the scene, so a light per room would be paid for
+// on every visible surface. The lit look comes from emissive ceiling strips
+// in skeldMap.js instead, which cost nothing per fragment.
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.55)
 dirLight.position.set(20, 30, 10)
 scene.add(dirLight)
 
-const { group: mapGroup, spawnPoint, interactables: staticInteractables } = buildSkeldMap()
+const { group: mapGroup, collisionGroup, spawnPoint, interactables: staticInteractables } = buildSkeldMap()
 scene.add(mapGroup)
 
-// Corridors are rotated Object3D children; force world matrices to be
-// current before the octree reads them, so collision matches what renders.
+// Force world matrices current before the octree reads them, so collision
+// matches what renders.
 mapGroup.updateMatrixWorld(true)
-const worldOctree = buildWorldOctree(mapGroup)
+const worldOctree = buildWorldOctree(collisionGroup)
 const player = createPlayerController(camera, worldOctree, spawnPoint)
 const remotePlayers = createRemotePlayers(scene)
 
@@ -188,7 +197,7 @@ function connect(url, name, lobby) {
   })
 
   netClient.on(MESSAGE_TYPE.PLAYER_JOINED, (msg) => {
-    roster.set(msg.id, { id: msg.id, name: msg.name })
+    roster.set(msg.id, { id: msg.id, name: msg.name, colorIndex: msg.colorIndex })
     updateLobbyRoster(lobby)
   })
 
@@ -200,8 +209,8 @@ function connect(url, name, lobby) {
 
   netClient.on(MESSAGE_TYPE.STATE, (msg) => {
     if (!started) return
-    const name = roster.get(msg.id)?.name ?? 'Player'
-    remotePlayers.upsert(msg.id, name, msg.position, msg.rotationY, msg.seq)
+    const entry = roster.get(msg.id)
+    remotePlayers.upsert(msg.id, entry?.name ?? 'Jogador', entry?.colorIndex, msg.position, msg.rotationY, msg.seq)
   })
 
   netClient.on(MESSAGE_TYPE.ROLE, (msg) => {
@@ -214,7 +223,8 @@ function connect(url, name, lobby) {
     for (const taskId of msg.taskIds) {
       taskLabelsById[taskId] = TASK_LOCATIONS.find((task) => task.id === taskId)?.label ?? taskId
     }
-    roleUI.showRole(msg.role, taskLabelsById)
+    const myColorIndex = roster.get(localPlayerId)?.colorIndex
+    roleUI.showRole(msg.role, taskLabelsById, Number.isInteger(myColorIndex) ? colorForIndex(myColorIndex) : null)
 
     taskInteraction = createTaskInteraction(interactSystem, msg.taskIds, (taskId) => {
       completedTaskIds.add(taskId)
