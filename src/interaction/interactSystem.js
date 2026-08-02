@@ -20,11 +20,18 @@ export function createInteractSystem(camera, interactables) {
   prompt.style.display = 'none'
   document.body.appendChild(prompt)
 
+  let currentTarget = null
+
   return {
     update() {
       raycaster.setFromCamera(SCREEN_CENTER, camera)
       const hits = raycaster.intersectObjects(interactables, false)
-      prompt.style.display = hits.length > 0 ? 'block' : 'none'
+      currentTarget = hits.length > 0 ? hits[0].object : null
+      prompt.style.display = currentTarget ? 'block' : 'none'
+    },
+
+    getTarget() {
+      return currentTarget
     },
   }
 }
