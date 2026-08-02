@@ -15,8 +15,14 @@ export function initPointerLockOverlay(domElement) {
   document.body.appendChild(overlay)
 
   const listeners = []
+  const activateListeners = []
 
   overlay.addEventListener('click', () => {
+    // onActivate runs synchronously inside the click handler. Audio
+    // specifically needs that: browsers only unlock an AudioContext from a
+    // real user gesture, and the 'pointerlockchange' event that fires
+    // afterwards no longer counts as one in some of them.
+    for (const listener of activateListeners) listener()
     domElement.requestPointerLock()
   })
 
@@ -31,6 +37,9 @@ export function initPointerLockOverlay(domElement) {
   return {
     onLockChange(callback) {
       listeners.push(callback)
+    },
+    onActivate(callback) {
+      activateListeners.push(callback)
     },
   }
 }

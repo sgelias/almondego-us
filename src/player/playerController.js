@@ -16,7 +16,7 @@ const HEAD_BOB_FREQUENCY = 10
 const HEAD_BOB_AMPLITUDE = 0.04
 const FALL_RESPAWN_Y = -10
 
-export function createPlayerController(camera, worldOctree, spawnPoint) {
+export function createPlayerController(camera, worldOctree, spawnPoint, { onStep } = {}) {
   const playerCollider = new Capsule(
     new THREE.Vector3(spawnPoint.x, spawnPoint.y, spawnPoint.z),
     new THREE.Vector3(spawnPoint.x, spawnPoint.y + PLAYER_SEGMENT_HEIGHT, spawnPoint.z),
@@ -91,7 +91,12 @@ export function createPlayerController(camera, worldOctree, spawnPoint) {
 
   function applyHeadBob(delta, isMoving) {
     if (isMoving && playerOnFloor) {
+      const previous = headBobTime
       headBobTime += delta * HEAD_BOB_FREQUENCY
+      // The head bob is already a foot-paced sine that only advances while
+      // walking on the ground, so a footstep is exactly one sound per half
+      // cycle - no separate step timer to keep in sync with the animation.
+      if (Math.floor(previous / Math.PI) !== Math.floor(headBobTime / Math.PI)) onStep?.()
       return Math.sin(headBobTime) * HEAD_BOB_AMPLITUDE
     }
     headBobTime = 0

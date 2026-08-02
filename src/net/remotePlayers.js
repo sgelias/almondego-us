@@ -85,9 +85,29 @@ export function createRemotePlayers(scene) {
     }
   }
 
-  function getMeshes() {
-    return [...players.values()].map((entry) => entry.group)
+  // Applies limited vision. `isVisible(id, position)` comes from the shared
+  // line-of-sight rule so the client agrees exactly with what bots can see.
+  //
+  // Three things have to move together, and missing any one of them breaks
+  // the feature in a different way:
+  //  - the group's own visibility (the avatar);
+  //  - the CSS2D label's DOM element, which is NOT covered by the group's
+  //    `visible` flag (same shape as L-004) - otherwise names float over
+  //    invisible players, which is worse than no vision limit at all;
+  //  - getMeshes(), which feeds interactSystem's raycast - an invisible but
+  //    still-raycastable avatar would let an Impostor kill through a wall.
+  function applyVisibility(isVisible) {
+    for (const [id, entry] of players) {
+      const visible = isVisible(id, entry.group.position)
+      entry.visible = visible
+      entry.group.visible = visible
+      entry.label.element.style.display = visible ? '' : 'none'
+    }
   }
 
-  return { upsert, remove, update, getMeshes }
+  function getMeshes() {
+    return [...players.values()].filter((entry) => entry.visible !== false).map((entry) => entry.group)
+  }
+
+  return { upsert, remove, update, applyVisibility, getMeshes }
 }

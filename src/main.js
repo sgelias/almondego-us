@@ -1,6 +1,9 @@
 import * as THREE from 'three'
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
 import { buildSkeldMap } from './map/skeldMap.js'
+import { createNavGraph } from '../shared/navGraph.js'
+import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
+import { SKELD_CORRIDORS } from '../shared/skeldCorridors.js'
 import { buildWorldOctree } from './map/worldOctree.js'
 import { createPlayerController } from './player/playerController.js'
 import { initPointerLockOverlay } from './ui/pointerLockOverlay.js'
@@ -14,12 +17,25 @@ import { createTaskInteraction } from './game/taskInteraction.js'
 import { createMeetingUI } from './game/meetingUI.js'
 import { showGameOver } from './game/gameOverScreen.js'
 import { createVentTransition } from './ui/ventTransition.js'
+import { createSfx } from './audio/sfx.js'
 import { MESSAGE_TYPE } from '../shared/protocol.js'
 import { TASK_LOCATIONS } from '../shared/taskPool.js'
 
 const DEFAULT_PORT = 8080
 const STATE_SEND_INTERVAL = 1 / 15
 const MEETING_RESULT_DISPLAY_MS = 4000
+// Must match botRunner's SENSE_RADIUS: bots and humans standing in the same
+// place have to see the same set of people, or one side is playing with an
+// advantage.
+const VISION_RADIUS = 9
+
+// NOTE (trust model): this hides other players from *rendering*, it does not
+// withhold their positions. The server still broadcasts every living
+// player's state to everyone, so a determined player with devtools open can
+// still read them. That is consistent with AD-002's LAN-trusted, no-anti-
+// cheat scope - stated here so "limited vision" is not mistaken for a
+// security property.
+const navGraph = createNavGraph(ROOM_LAYOUT, SKELD_CORRIDORS)
 
 const canvas = document.getElementById('app')
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
@@ -60,7 +76,8 @@ scene.add(mapGroup)
 // matches what renders.
 mapGroup.updateMatrixWorld(true)
 const worldOctree = buildWorldOctree(collisionGroup)
-const player = createPlayerController(camera, worldOctree, spawnPoint)
+const sfx = createSfx()
+const player = createPlayerController(camera, worldOctree, spawnPoint, { onStep: () => sfx.footstep() })
 const remotePlayers = createRemotePlayers(scene)
 
 // GAME-04/GAME-13: a task prompt only makes sense for a Crewmate looking at
@@ -124,6 +141,7 @@ let interactKeyDown = false
 
 const meetingUI = createMeetingUI({
   onVote(targetId) {
+    sfx.vote()
     netClient.send(MESSAGE_TYPE.VOTE, { targetId })
   },
 })
@@ -230,6 +248,7 @@ function connect(url, name, lobby) {
 
     taskInteraction = createTaskInteraction(interactSystem, msg.taskIds, (taskId) => {
       completedTaskIds.add(taskId)
+      sfx.taskDone()
       roleUI.markTaskDone(taskId)
       netClient.send(MESSAGE_TYPE.TASK_COMPLETE, { taskId })
     })
@@ -243,7 +262,10 @@ function connect(url, name, lobby) {
     remotePlayers.remove(msg.id)
     if (msg.id === localPlayerId) {
       localAlive = false
+      sfx.death()
       showDeathNotice()
+    } else {
+      sfx.kill()
     }
   })
 
@@ -255,6 +277,7 @@ function connect(url, name, lobby) {
     // pointer-lock overlay's own "click to resume" flow handles regaining it
     // once the meeting ends (browsers require a user gesture to re-lock).
     document.exitPointerLock()
+    sfx.meeting()
     meetingUI.showDiscussion(msg.discussionSeconds)
     setTimeout(() => {
       // localAlive is read here, not when the meeting started, so a player
@@ -271,7 +294,8 @@ function connect(url, name, lobby) {
         showDeathNotice()
       }
     }
-    const ejectedName = msg.ejectedId ? (roster.get(msg.ejectedId)?.name ?? 'Someone') : null
+    if (msg.ejectedId) sfx.eject()
+    const ejectedName = msg.ejectedId ? (roster.get(msg.ejectedId)?.name ?? 'Alguém') : null
     meetingUI.showResult(ejectedName, msg.wasImpostor)
     setTimeout(() => {
       if (!gameEnded) {
@@ -288,8 +312,11 @@ function connect(url, name, lobby) {
     player.setFrozen(true)
     document.exitPointerLock()
     meetingUI.hide()
+    const iWon = (msg.winner === 'crew') === (localRole !== 'impostor')
+    if (iWon) sfx.win()
+    else sfx.lose()
     const impostorName =
-      roster.get(msg.impostorId)?.name ?? (msg.impostorId === localPlayerId ? 'you' : 'Unknown')
+      roster.get(msg.impostorId)?.name ?? (msg.impostorId === localPlayerId ? 'você' : 'Desconhecido')
     showGameOver(msg.winner, impostorName)
   })
 
@@ -297,6 +324,7 @@ function connect(url, name, lobby) {
     // The move happens at the midpoint, while the screen is black, so the
     // player never sees the world snap - they see themselves go into a duct
     // and come out somewhere else.
+    sfx.vent()
     ventTransition.play(() => player.teleportTo(msg.position))
   })
 
@@ -309,7 +337,13 @@ function startGame(lobby) {
   if (started) return
   started = true
   lobby.hide()
-  initPointerLockOverlay(canvas)
+  const pointerLock = initPointerLockOverlay(canvas)
+  // Browsers only allow audio to start from a user gesture; the overlay's
+  // click is one that already exists in the flow.
+  pointerLock.onActivate(() => {
+    sfx.resume()
+    sfx.startAmbient()
+  })
 
   document.addEventListener('keydown', (event) => player.handleKeyDown(event))
   document.addEventListener('keyup', (event) => player.handleKeyUp(event))
@@ -324,8 +358,13 @@ function startGame(lobby) {
     const deltaTime = clock.getDelta()
 
     player.update(deltaTime)
-    interactSystem.update()
     remotePlayers.update(deltaTime)
+    // Visibility must be resolved before interactSystem raycasts, so a
+    // player you cannot see is also not a valid kill target.
+    remotePlayers.applyVisibility((id, position) =>
+      navGraph.canSee(camera.position.x, camera.position.z, position.x, position.z, VISION_RADIUS)
+    )
+    interactSystem.update()
     if (taskInteraction && localAlive && !interactionsPaused) {
       taskInteraction.update(deltaTime, interactKeyDown)
     }

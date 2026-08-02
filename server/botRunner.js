@@ -86,20 +86,13 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     return positions
   }
 
-  // Line of sight, not just proximity. A pure distance check would let bots
-  // see through walls, which is both unfair (a bot "witnesses" a kill in the
-  // next room) and, for the impostor, paralysing - with rooms this close
-  // together there was almost always someone within radius through a wall,
-  // so it could never find a moment without witnesses and matches stalled.
+  // Line of sight, not just proximity - a pure distance check let bots see
+  // through walls (see STATE.md L-014). The predicate itself lives in
+  // shared/navGraph so the client's limited-vision rendering uses the exact
+  // same rule: a bot and a human standing in the same spot must see the same
+  // set of people.
   function canSee(fromPosition, toPosition) {
-    if (distance2D(fromPosition, toPosition) > SENSE_RADIUS) return false
-    const fromRoom = nav.roomIdAt(fromPosition[0], fromPosition[2])
-    const toRoom = nav.roomIdAt(toPosition[0], toPosition[2])
-    // Both inside rooms: only the same room counts as visible.
-    if (fromRoom && toRoom) return fromRoom === toRoom
-    // At least one is in a corridor, where the sightline is open along its
-    // length and short anyway - distance alone is a fair approximation.
-    return true
+    return nav.canSee(fromPosition[0], fromPosition[2], toPosition[0], toPosition[2], SENSE_RADIUS)
   }
 
   function playersNear(position, positions, excludeId) {

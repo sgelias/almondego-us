@@ -199,5 +199,24 @@ export function createNavGraph(roomLayout, corridors) {
     return room ? [room.center[0], room.center[2]] : null
   }
 
-  return { roomIdAt, nearestRoomId, findRoomPath, waypointsTo, randomAdjacentRoom, roomCenter }
+  // Line of sight, not raw proximity. Rooms on this map sit close enough
+  // together that a distance-only test sees straight through walls.
+  //
+  // This lives here, in shared code, because both the bots' sensing and the
+  // client's "which players do I actually render" use it. Two copies would
+  // drift, and the drift would be exactly the unfairness the limited-vision
+  // feature exists to remove - a bot and a human standing in the same spot
+  // must see the same set of people.
+  function canSee(fromX, fromZ, toX, toZ, radius) {
+    if (Math.hypot(fromX - toX, fromZ - toZ) > radius) return false
+    const fromRoom = roomIdAt(fromX, fromZ)
+    const toRoom = roomIdAt(toX, toZ)
+    // Both inside rooms: only the same room counts as visible.
+    if (fromRoom && toRoom) return fromRoom === toRoom
+    // At least one is in a corridor, where the sightline runs along its
+    // length and is short anyway - distance alone is a fair approximation.
+    return true
+  }
+
+  return { roomIdAt, nearestRoomId, findRoomPath, waypointsTo, randomAdjacentRoom, roomCenter, canSee }
 }
