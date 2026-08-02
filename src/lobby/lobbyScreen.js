@@ -1,14 +1,18 @@
 import { crewmateSvg, crewmateRow } from '../ui/crewmateIcon.js'
-import { PANEL, primaryButton, secondaryButton, textInput, screenBackdrop } from '../ui/theme.js'
+import { PANEL, primaryButton, textInput, screenBackdrop } from '../ui/theme.js'
 
 function styleOverlay(el) {
   screenBackdrop(el)
   el.style.zIndex = '10'
   el.style.overflowY = 'auto'
   el.style.padding = '2rem 1rem'
+  // Content taller than the window scrolls from the top rather than being
+  // centred and clipped at both ends - a centred column that overflows hides
+  // its first and last elements, and the last element here is an action.
+  el.style.justifyContent = 'flex-start'
 }
 
-export function showLobby({ onHostAndJoin, onJoin, onStart }) {
+export function showLobby({ onJoin, onStart }) {
   const overlay = document.createElement('div')
   styleOverlay(overlay)
 
@@ -50,29 +54,43 @@ export function showLobby({ onHostAndJoin, onJoin, onStart }) {
   textInput(nameInput)
   panel.appendChild(nameInput)
 
-  const hostButton = document.createElement('button')
-  hostButton.textContent = 'Hospedar e Entrar'
-  primaryButton(hostButton)
-  panel.appendChild(hostButton)
+  // One button, not a host/join choice. Everyone who opens the page connects
+  // to the server that served it, and the server makes whoever arrives first
+  // the host. The old pair was a trap: a guest who opened the host's address
+  // still saw "Hospedar e Entrar", which pointed at localhost on *their*
+  // machine, where nothing is running.
+  const joinButton = document.createElement('button')
+  joinButton.textContent = 'Entrar na partida'
+  primaryButton(joinButton)
+  panel.appendChild(joinButton)
 
-  const divider = document.createElement('div')
-  divider.textContent = 'ou entre numa partida existente'
-  divider.style.textAlign = 'center'
-  divider.style.color = '#78899d'
-  divider.style.fontSize = '0.82rem'
-  divider.style.margin = '0.5rem 0 0.1rem'
-  panel.appendChild(divider)
+  const hint = document.createElement('div')
+  hint.textContent = 'Sozinho já dá: as vagas que sobrarem viram bots.'
+  hint.style.textAlign = 'center'
+  hint.style.color = '#78899d'
+  hint.style.fontSize = '0.82rem'
+  panel.appendChild(hint)
+
+  // Escape hatch for the unusual setup where the page and the match server
+  // are on different machines (npm run web and npm run server run apart).
+  const advanced = document.createElement('details')
+  advanced.style.marginTop = '0.3rem'
+  const summary = document.createElement('summary')
+  summary.textContent = 'Servidor em outro computador'
+  summary.style.cursor = 'pointer'
+  summary.style.color = '#78899d'
+  summary.style.fontSize = '0.82rem'
+  advanced.appendChild(summary)
 
   const addressInput = document.createElement('input')
   addressInput.type = 'text'
-  addressInput.placeholder = 'Endereço do anfitrião (ex: 192.168.1.10:8080)'
+  addressInput.placeholder = 'ex: 192.168.1.10:8080'
   textInput(addressInput)
-  panel.appendChild(addressInput)
-
-  const joinButton = document.createElement('button')
-  joinButton.textContent = 'Entrar'
-  secondaryButton(joinButton)
-  panel.appendChild(joinButton)
+  addressInput.style.marginTop = '0.4rem'
+  addressInput.style.width = '100%'
+  addressInput.style.boxSizing = 'border-box'
+  advanced.appendChild(addressInput)
+  panel.appendChild(advanced)
 
   const errorMessage = document.createElement('div')
   errorMessage.style.color = '#ff6b6b'
@@ -107,7 +125,6 @@ export function showLobby({ onHostAndJoin, onJoin, onStart }) {
   research.style.borderRadius = '10px'
   research.style.padding = '1rem 1.2rem'
   research.style.display = 'none'
-  overlay.appendChild(research)
 
   // Host-only match setting. The server clamps this against the roster size
   // (crew must start strictly ahead of the impostors), so a value here is a
@@ -143,14 +160,17 @@ export function showLobby({ onHostAndJoin, onJoin, onStart }) {
   startButton.style.display = 'none'
   overlay.appendChild(startButton)
 
+  // The research card goes LAST, below the actions. It used to sit above
+  // them, and on a laptop screen that pushed "Iniciar Partida" below the
+  // fold: you answered the question and nothing appeared to happen, because
+  // the button that starts the match was off-screen.
+  overlay.appendChild(research)
+
   document.body.appendChild(overlay)
 
-  hostButton.addEventListener('click', () => {
-    onHostAndJoin(nameInput.value.trim() || 'Player')
-  })
-
   joinButton.addEventListener('click', () => {
-    onJoin(addressInput.value.trim(), nameInput.value.trim() || 'Player')
+    // An empty address means "the machine that served this page".
+    onJoin(addressInput.value.trim(), nameInput.value.trim() || 'Jogador')
   })
 
   startButton.addEventListener('click', () => {
@@ -166,7 +186,7 @@ export function showLobby({ onHostAndJoin, onJoin, onStart }) {
       research.style.display = 'block'
 
       const title = document.createElement('div')
-      title.textContent = question.title
+      title.textContent = `${question.title} (opcional, enquanto espera)`
       title.style.color = '#8fd3ff'
       title.style.letterSpacing = '0.08em'
       title.style.textTransform = 'uppercase'

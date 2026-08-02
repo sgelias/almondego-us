@@ -793,12 +793,19 @@ function startGame(lobby) {
   animate()
 }
 
+// The page was served by the machine running the match server, so that is
+// where to connect. Deriving it removes the whole class of "I opened the
+// host's address but the button still tried localhost" failures - and it
+// works unchanged for the host, whose hostname is localhost anyway.
+function matchServerUrl(overrideAddress) {
+  if (overrideAddress) return `ws://${overrideAddress}`
+  const host = window.location.hostname || 'localhost'
+  return `ws://${host}:${DEFAULT_PORT}`
+}
+
 const lobby = showLobby({
-  onHostAndJoin(name) {
-    connect(`ws://localhost:${DEFAULT_PORT}`, name, lobby)
-  },
   onJoin(address, name) {
-    connect(`ws://${address}`, name, lobby)
+    connect(matchServerUrl(address), name, lobby)
   },
   onStart(impostorCount) {
     netClient.send(MESSAGE_TYPE.START, { impostorCount })

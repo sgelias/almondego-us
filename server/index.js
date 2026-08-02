@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws'
-import { networkInterfaces } from 'node:os'
 import { randomUUID } from 'node:crypto'
+import { getLanAddress } from './lanAddress.js'
 import { MESSAGE_TYPE, isKnownMessageType } from '../shared/protocol.js'
 import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
 import { createGameActions } from './gameActions.js'
@@ -19,16 +19,6 @@ const TARGET_PLAYER_COUNT = 6
 // start strictly ahead: at most floor((total-1)/2) impostors. For 6 players
 // that is 2.
 const maxImpostors = (total) => Math.max(1, Math.floor((total - 1) / 2))
-
-function getLanAddress() {
-  const interfaces = networkInterfaces()
-  for (const ifaceList of Object.values(interfaces)) {
-    for (const iface of ifaceList) {
-      if (iface.family === 'IPv4' && !iface.internal) return iface.address
-    }
-  }
-  return '127.0.0.1'
-}
 
 function resolveName(requestedName, players) {
   const name = requestedName || 'Jogador'
@@ -332,5 +322,4 @@ wss.on('connection', (socket) => {
   })
 })
 
-console.log(`AlmondegoUs — servidor de partida ouvindo em ws://${getLanAddress()}:${PORT}`)
-console.log(`Anfitrião: abra o jogo e clique em "Hospedar e Entrar". Os outros: usem o endereço acima.`)
+console.log(`AlmondegoUs — servidor de partida em ws://${getLanAddress()}:${PORT}`)

@@ -16,4 +16,6 @@ setTimeout(() => {
   console.log('')
   console.log(`Para jogar: abra http://localhost:${webPort} no navegador.`)
   console.log('Sozinho já funciona - as vagas restantes viram bots.')
+  console.log('Para jogar com outras pessoas, mande a elas o endereço da rede acima.')
+  console.log('Todo mundo clica em "Entrar na partida" - quem entrar primeiro é o anfitrião.')
 }, 50)

@@ -14,10 +14,15 @@ npm start
 ```
 
 Abra o endereço que aparecer no terminal (por padrão `http://localhost:8843`)
-e clique em **Hospedar e Entrar**. Sozinho já funciona.
+e clique em **Entrar na partida**. Sozinho já funciona — as vagas que sobrarem
+viram bots.
 
-Para jogar com mais gente na mesma rede, os outros abrem o mesmo endereço na
-máquina do anfitrião e usam **Entrar** com o IP que o terminal mostrou.
+**Para jogar com mais gente na mesma rede:** só uma máquina roda `npm start`.
+As outras abrem, no navegador, o endereço de rede que o terminal mostrou
+(algo como `http://192.168.1.10:8843`) e clicam no mesmo **Entrar na partida**.
+Não existe escolher entre hospedar ou entrar: cada um se conecta ao servidor
+que serviu a página, e quem entrar primeiro vira o anfitrião — é quem vê o
+botão **Iniciar Partida**.
 
 ```bash
 npm test     # 113 testes

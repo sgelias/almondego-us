@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { extname, join, normalize, resolve } from 'node:path'
+import { getLanAddress } from '../server/lanAddress.js'
 
 // A static file server for the client, replacing `python3 -m http.server`.
 //
@@ -57,5 +58,6 @@ createServer(async (request, response) => {
   }
 }).listen(PORT, () => {
   console.log(`AlmondegoUs — cliente em http://localhost:${PORT}`)
+  console.log(`Outros jogadores na mesma rede: http://${getLanAddress()}:${PORT}`)
   console.log('Cache desativado: recarregar sempre traz a versão mais recente.')
 })
