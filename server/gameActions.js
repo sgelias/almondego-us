@@ -32,6 +32,12 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
   function checkAndBroadcastWin(checkTasks) {
     const match = getMatch()
     if (!match) return
+    // Once a match is over it stays over. Without this, any later path that
+    // reaches here (a disconnect, for one - doPlayerLeft is not phase-gated)
+    // re-broadcasts gameOver, and a client that builds a fresh overlay per
+    // message ends up with two stacked: dismissing the top one reveals an
+    // identical one underneath, which looks exactly like a dead button.
+    if (match.phase === 'gameOver') return
     const winner = gameState.checkWinCondition(match, { checkTasks })
     if (!winner) return
     match.phase = 'gameOver'
@@ -148,7 +154,8 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
   // player from the roster/socket maps.
   function doPlayerLeft(playerId) {
     const match = getMatch()
-    if (!match || !gameState.isAlive(match, playerId)) return
+    if (!match || match.phase === 'gameOver') return
+    if (!gameState.isAlive(match, playerId)) return
     if (playerId === match.impostorId) {
       match.phase = 'gameOver'
       broadcastToAll(MESSAGE_TYPE.GAME_OVER, { winner: 'crew', impostorId: match.impostorId })

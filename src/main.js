@@ -20,6 +20,7 @@ import { showGameOver } from './game/gameOverScreen.js'
 import { createVentTransition } from './ui/ventTransition.js'
 import { createSfx } from './audio/sfx.js'
 import { createMinimap } from './ui/minimap.js'
+import { createToast } from './ui/toast.js'
 import { CORRIDOR_WIDTH } from '../shared/skeldCorridors.js'
 import { MESSAGE_TYPE } from '../shared/protocol.js'
 import { TASK_LOCATIONS } from '../shared/taskPool.js'
@@ -141,6 +142,7 @@ const roleUI = createRoleUI()
 const minimap = createMinimap(ROOM_LAYOUT, SKELD_CORRIDORS, { corridorWidth: CORRIDOR_WIDTH })
 minimap.mount()
 const ventTransition = createVentTransition()
+const toast = createToast()
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight
@@ -159,6 +161,10 @@ let localAlive = true
 let isHost = false
 let deathNotice = null
 let gameOverScreen = null
+// Pending meeting phase timers. A restart clears gameEnded, so any survivor
+// of the old match would fire against the new one - popping a voting screen
+// over a fresh game.
+let meetingTimers = []
 // Suppresses task interaction while a meeting is up or the game has ended.
 let interactionsPaused = false
 // taskId -> timestamp before which that console refuses to reopen, the cost
@@ -286,9 +292,12 @@ function connect(url, name, lobby) {
 
   // The server is the single authority on whether a match can start (it is
   // the side that knows the bot-filling rules), so surface its rejection
-  // rather than second-guessing it here.
+  // rather than second-guessing it here. Once the match has begun the lobby
+  // overlay is gone from the DOM, so writing there would be invisible - a
+  // rejected action would look like a dead button.
   netClient.on(MESSAGE_TYPE.ERROR, (msg) => {
-    lobby.showConnectionError(msg.message)
+    if (started) toast.show(msg.message)
+    else lobby.showConnectionError(msg.message)
   })
 
   netClient.on(MESSAGE_TYPE.WELCOME, (msg) => {
@@ -363,11 +372,11 @@ function connect(url, name, lobby) {
     document.exitPointerLock()
     sfx.meeting()
     meetingUI.showDiscussion(msg.discussionSeconds, withColors(msg.livingPlayers))
-    setTimeout(() => {
+    meetingTimers.push(setTimeout(() => {
       // localAlive is read here, not when the meeting started, so a player
       // killed during the discussion phase still loses the vote.
       if (!gameEnded) meetingUI.showVoting(withColors(msg.livingPlayers), msg.votingSeconds, localAlive)
-    }, msg.discussionSeconds * 1000)
+    }, msg.discussionSeconds * 1000))
   })
 
   netClient.on(MESSAGE_TYPE.MEETING_RESULT, (msg) => {
@@ -381,13 +390,13 @@ function connect(url, name, lobby) {
     if (msg.ejectedId) sfx.eject()
     const ejectedName = msg.ejectedId ? (roster.get(msg.ejectedId)?.name ?? 'Alguém') : null
     meetingUI.showResult(ejectedName, roster.get(msg.ejectedId)?.colorIndex, msg.wasImpostor)
-    setTimeout(() => {
+    meetingTimers.push(setTimeout(() => {
       if (!gameEnded) {
         meetingUI.hide()
         player.setFrozen(false)
         interactionsPaused = false
       }
-    }, MEETING_RESULT_DISPLAY_MS)
+    }, MEETING_RESULT_DISPLAY_MS))
   })
 
   netClient.on(MESSAGE_TYPE.GAME_OVER, (msg) => {
@@ -401,6 +410,10 @@ function connect(url, name, lobby) {
     else sfx.lose()
     const impostorName =
       roster.get(msg.impostorId)?.name ?? (msg.impostorId === localPlayerId ? 'você' : 'Desconhecido')
+    // Never stack two of these: a second gameOver would leave an identical
+    // overlay underneath the one being dismissed, which reads as a dead
+    // restart button.
+    gameOverScreen?.remove()
     gameOverScreen = showGameOver(msg.winner, impostorName, roster.get(msg.impostorId)?.colorIndex, {
       // Only the host can start a match - the server rejects `start` from
       // anyone else - so only the host gets the button.
@@ -436,6 +449,9 @@ function resetForNewMatch() {
   localAlive = true
   localRole = null
   interactionsPaused = false
+
+  for (const timer of meetingTimers) clearTimeout(timer)
+  meetingTimers = []
 
   assignedTaskIds.clear()
   completedTaskIds.clear()

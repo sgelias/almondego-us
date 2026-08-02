@@ -46,6 +46,15 @@ export function showGameOver(winner, impostorName, impostorColorIndex, { canRest
       restart.disabled = true
       restart.textContent = 'Reiniciando…'
       onRestart()
+      // If the restart does not land, the button must not stay dead - a
+      // permanently disabled "Reiniciando…" is indistinguishable from a
+      // broken game. A successful restart removes this whole overlay well
+      // before the timer fires.
+      setTimeout(() => {
+        if (!overlay.isConnected) return
+        restart.disabled = false
+        restart.textContent = 'Jogar novamente'
+      }, 3000)
     })
     overlay.appendChild(restart)
   } else {
