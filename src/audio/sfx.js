@@ -21,7 +21,7 @@ export function createSfx() {
       const AudioCtor = window.AudioContext || window.webkitAudioContext
       ctx = new AudioCtor()
       master = ctx.createGain()
-      master.gain.value = 0.5
+      master.gain.value = 0.85
       master.connect(ctx.destination)
     }
     if (ctx.state === 'suspended') ctx.resume()
@@ -85,16 +85,33 @@ export function createSfx() {
   }
 
   let stepToggle = false
+  let unlockedOnce = false
 
   return {
     resume,
+
+    // Whether the context actually exists and is running. Exposed so the
+    // caller can tell "audio is off" apart from "audio is quiet".
+    isRunning() {
+      return Boolean(ctx) && ctx.state === 'running'
+    },
+
+    // A short confirmation blip the first time audio unlocks. Doubles as the
+    // signal that the gesture gate worked - silence here means activation
+    // failed, not that a particular effect is too quiet.
+    confirmUnlock() {
+      if (!ctx || unlockedOnce) return
+      unlockedOnce = true
+      tone({ type: 'triangle', from: 660, peak: 0.14, attack: 0.01, decay: 0.14 })
+      tone({ type: 'triangle', from: 990, peak: 0.12, attack: 0.01, decay: 0.18, delay: 0.12 })
+    },
 
     // Alternating pitch so consecutive steps read as left/right rather than
     // one sound on repeat.
     footstep() {
       if (!ctx) return
       stepToggle = !stepToggle
-      noiseBurst({ duration: 0.11, peak: 0.06, filterFrom: stepToggle ? 380 : 300, filterTo: 150, q: 1.4 })
+      noiseBurst({ duration: 0.12, peak: 0.16, filterFrom: stepToggle ? 420 : 320, filterTo: 160, q: 1.2 })
     },
 
     taskProgress() {
@@ -151,7 +168,7 @@ export function createSfx() {
     startAmbient() {
       if (!ctx || ambientGain) return
       ambientGain = ctx.createGain()
-      ambientGain.gain.value = 0.035
+      ambientGain.gain.value = 0.06
       ambientGain.connect(master)
 
       for (const freq of [55, 82.5]) {

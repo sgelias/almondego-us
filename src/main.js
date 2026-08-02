@@ -78,6 +78,24 @@ scene.add(mapGroup)
 mapGroup.updateMatrixWorld(true)
 const worldOctree = buildWorldOctree(collisionGroup)
 const sfx = createSfx()
+
+// Audio unlock. The pointer-lock overlay's click was the only trigger before
+// and the user reported no sound at all, so this no longer depends on one
+// specific element being the thing that gets clicked: any first gesture
+// anywhere unlocks audio. Capture phase, so it fires even if something above
+// stops propagation, and { once: false } because the very first gesture may
+// land while the AudioContext is still being created.
+function unlockAudio() {
+  sfx.resume()
+  if (sfx.isRunning()) {
+    sfx.confirmUnlock()
+    sfx.startAmbient()
+    document.removeEventListener('pointerdown', unlockAudio, true)
+    document.removeEventListener('keydown', unlockAudio, true)
+  }
+}
+document.addEventListener('pointerdown', unlockAudio, true)
+document.addEventListener('keydown', unlockAudio, true)
 const player = createPlayerController(camera, worldOctree, spawnPoint, { onStep: () => sfx.footstep() })
 const remotePlayers = createRemotePlayers(scene)
 
@@ -369,12 +387,7 @@ function startGame(lobby) {
   started = true
   lobby.hide()
   const pointerLock = initPointerLockOverlay(canvas)
-  // Browsers only allow audio to start from a user gesture; the overlay's
-  // click is one that already exists in the flow.
-  pointerLock.onActivate(() => {
-    sfx.resume()
-    sfx.startAmbient()
-  })
+  pointerLock.onActivate(unlockAudio)
 
   document.addEventListener('keydown', (event) => player.handleKeyDown(event))
   document.addEventListener('keyup', (event) => player.handleKeyUp(event))
