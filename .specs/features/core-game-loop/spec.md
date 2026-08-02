@@ -60,15 +60,15 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 
 **Acceptance Criteria**:
 
-1. WHEN the Impostor is within a short range of a living Crewmate and presses the kill key THEN the server SHALL mark that Crewmate dead, broadcast the death to all clients, and leave a reportable body at that location.
-2. WHEN a living player interacts with a body, or with the Cafeteria's emergency button THEN the server SHALL start a meeting: freeze every player's movement, and broadcast a discussion timer followed by a voting phase.
+1. WHEN the Impostor is within a short range of a living Crewmate and presses the kill key THEN the server SHALL mark that Crewmate dead and broadcast the death to all clients. **(Scope trim, discovered during T13 wiring):** v1 does not spawn a separate, reportable "body" prop at the kill location — that's a second interactable-placement and cleanup system on top of the emergency button, which already gives every living player the same fundamental capability ("call a meeting to vote"). Deferred; noted in STATE.md.
+2. WHEN a living player interacts with the Cafeteria's emergency button THEN the server SHALL start a meeting: freeze every player's movement, and broadcast a discussion timer followed by a voting phase.
 3. WHEN the voting phase is active THEN each living player SHALL be able to cast exactly one vote — a specific living player, or "skip" — from a roster of currently living players.
 4. WHEN the voting phase ends (timer expires, or everyone living has voted) THEN the server SHALL tally votes: a strict majority of votes for one player ejects them; a tie, a majority for "skip", or no votes ejects no one. The server SHALL reveal whether the ejected player (if any) was the Impostor, and broadcast the full result to all clients.
 5. WHEN the ejected player is the Impostor THEN the server SHALL declare Crewmates the winner.
 6. WHEN the number of living Crewmates drops to 1 or fewer (with 1 living Impostor) THEN the server SHALL declare the Impostor the winner.
 7. WHEN a player is dead (killed or ejected) THEN their own client SHALL enter a spectator state — camera still free to move, but no longer visible to living players' clients, and no longer able to vote, interact, complete tasks, or be killed.
 
-**Independent Test**: With **4+** clients (a kill in a 3-player match immediately triggers GAME-11's parity win before any meeting can happen — see AD/lesson in STATE.md), have the Impostor kill a Crewmate, have another Crewmate report the body, run the meeting to a vote, eject the Impostor, and confirm all clients see "Crewmates win" with the Impostor's identity revealed.
+**Independent Test**: With **4+** clients (a kill in a 3-player match immediately triggers GAME-11's parity win before any meeting can happen — see AD/lesson in STATE.md), have the Impostor kill a Crewmate, have any living player use the Cafeteria emergency button to call a meeting, run it to a vote, eject the Impostor, and confirm all clients see "Crewmates win" with the Impostor's identity revealed.
 
 ---
 
@@ -92,7 +92,7 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 - WHEN a Crewmate disconnects mid-match THEN the server SHALL remove them (existing NET-13 behavior) and re-check win conditions immediately afterward (their disconnect could trigger Impostor parity win).
 - WHEN a new meeting or kill is attempted while a meeting or game-over state is already active THEN the server SHALL ignore it.
 - WHEN "Start Game" is clicked with fewer than 3 connected players THEN the client SHALL show a message instead of starting.
-- WHEN a dead player's client tries to send a task/kill/vote/report message THEN the server SHALL ignore it (dead players have no valid actions).
+- WHEN a dead player's client tries to send a task/kill/vote/meeting message THEN the server SHALL ignore it (dead players have no valid actions).
 
 ---
 

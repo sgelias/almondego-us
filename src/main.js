@@ -8,10 +8,17 @@ import { createInteractSystem } from './interaction/interactSystem.js'
 import { showLobby } from './lobby/lobbyScreen.js'
 import { createNetClient, CONNECTED, CONNECTION_ERROR } from './net/client.js'
 import { createRemotePlayers } from './net/remotePlayers.js'
+import { createRoleUI } from './game/roleUI.js'
+import { createTaskInteraction } from './game/taskInteraction.js'
+import { createMeetingUI } from './game/meetingUI.js'
+import { showGameOver } from './game/gameOverScreen.js'
 import { MESSAGE_TYPE } from '../shared/protocol.js'
+import { TASK_LOCATIONS } from '../shared/taskPool.js'
 
 const DEFAULT_PORT = 8080
 const STATE_SEND_INTERVAL = 1 / 15
+const MIN_PLAYERS_TO_START = 3
+const MEETING_RESULT_DISPLAY_MS = 4000
 
 const canvas = document.getElementById('app')
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
@@ -37,7 +44,7 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.8)
 dirLight.position.set(20, 30, 10)
 scene.add(dirLight)
 
-const { group: mapGroup, spawnPoint, interactables } = buildSkeldMap()
+const { group: mapGroup, spawnPoint, interactables: staticInteractables } = buildSkeldMap()
 scene.add(mapGroup)
 
 // Corridors are rotated Object3D children; force world matrices to be
@@ -45,8 +52,12 @@ scene.add(mapGroup)
 mapGroup.updateMatrixWorld(true)
 const worldOctree = buildWorldOctree(mapGroup)
 const player = createPlayerController(camera, worldOctree, spawnPoint)
-const interactSystem = createInteractSystem(camera, interactables)
 const remotePlayers = createRemotePlayers(scene)
+// Remote player avatars come and go as players join/die, so the raycast
+// target list is read fresh each frame rather than captured once.
+const interactSystem = createInteractSystem(camera, () => [...staticInteractables, ...remotePlayers.getMeshes()])
+
+const roleUI = createRoleUI()
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight
@@ -58,10 +69,60 @@ window.addEventListener('resize', () => {
 const roster = new Map()
 let netClient = null
 let started = false
+let gameEnded = false
+let localPlayerId = null
+let localRole = null
+let taskInteraction = null
+let interactKeyDown = false
+
+const meetingUI = createMeetingUI({
+  onVote(targetId) {
+    netClient.send(MESSAGE_TYPE.VOTE, { targetId })
+  },
+})
 
 function updateLobbyRoster(lobby) {
   lobby.setPlayers([...roster.values()])
 }
+
+function showDeathNotice() {
+  const notice = document.createElement('div')
+  notice.textContent = 'You died. You can still look around, but no one can see you.'
+  notice.style.position = 'fixed'
+  notice.style.top = '1rem'
+  notice.style.left = '50%'
+  notice.style.transform = 'translateX(-50%)'
+  notice.style.color = '#ff6b6b'
+  notice.style.fontFamily = 'sans-serif'
+  notice.style.background = 'rgba(0, 0, 0, 0.6)'
+  notice.style.padding = '0.5rem 1rem'
+  notice.style.borderRadius = '6px'
+  document.body.appendChild(notice)
+}
+
+function handleInteractPress() {
+  if (!started || gameEnded || !netClient) return
+  const target = interactSystem.getTarget()
+  if (!target) return
+
+  const { kind } = target.userData
+  if (kind === 'vent' && localRole === 'impostor') {
+    netClient.send(MESSAGE_TYPE.VENT, { ventId: target.userData.ventId })
+  } else if (kind === 'emergencyButton') {
+    netClient.send(MESSAGE_TYPE.CALL_MEETING, {})
+  } else if (kind === 'player' && localRole === 'impostor') {
+    netClient.send(MESSAGE_TYPE.KILL, { targetId: target.userData.killTargetId })
+  }
+}
+
+document.addEventListener('keydown', (event) => {
+  if (event.code !== 'KeyE') return
+  if (!event.repeat) handleInteractPress()
+  interactKeyDown = true
+})
+document.addEventListener('keyup', (event) => {
+  if (event.code === 'KeyE') interactKeyDown = false
+})
 
 function connect(url, name, lobby) {
   if (netClient) return
@@ -76,6 +137,7 @@ function connect(url, name, lobby) {
   })
 
   netClient.on(MESSAGE_TYPE.WELCOME, (msg) => {
+    localPlayerId = msg.playerId
     lobby.setIsHost(msg.isHost)
     roster.clear()
     for (const entry of msg.players) roster.set(entry.id, entry)
@@ -97,6 +159,65 @@ function connect(url, name, lobby) {
     if (!started) return
     const name = roster.get(msg.id)?.name ?? 'Player'
     remotePlayers.upsert(msg.id, name, msg.position, msg.rotationY, msg.seq)
+  })
+
+  netClient.on(MESSAGE_TYPE.ROLE, (msg) => {
+    localRole = msg.role
+    const taskLabelsById = {}
+    for (const taskId of msg.taskIds) {
+      taskLabelsById[taskId] = TASK_LOCATIONS.find((task) => task.id === taskId)?.label ?? taskId
+    }
+    roleUI.showRole(msg.role, taskLabelsById)
+
+    taskInteraction = createTaskInteraction(interactSystem, msg.taskIds, (taskId) => {
+      roleUI.markTaskDone(taskId)
+      netClient.send(MESSAGE_TYPE.TASK_COMPLETE, { taskId })
+    })
+  })
+
+  netClient.on(MESSAGE_TYPE.TASKS_PROGRESS, (msg) => {
+    roleUI.updateProgress(msg.completed, msg.total)
+  })
+
+  netClient.on(MESSAGE_TYPE.PLAYER_DIED, (msg) => {
+    remotePlayers.remove(msg.id)
+    if (msg.id === localPlayerId) showDeathNotice()
+  })
+
+  netClient.on(MESSAGE_TYPE.MEETING_STARTED, (msg) => {
+    player.setFrozen(true)
+    meetingUI.showDiscussion(msg.discussionSeconds)
+    setTimeout(() => {
+      if (!gameEnded) meetingUI.showVoting(msg.livingPlayers, msg.votingSeconds)
+    }, msg.discussionSeconds * 1000)
+  })
+
+  netClient.on(MESSAGE_TYPE.MEETING_RESULT, (msg) => {
+    if (msg.ejectedId) {
+      remotePlayers.remove(msg.ejectedId)
+      if (msg.ejectedId === localPlayerId) showDeathNotice()
+    }
+    const ejectedName = msg.ejectedId ? (roster.get(msg.ejectedId)?.name ?? 'Someone') : null
+    meetingUI.showResult(ejectedName, msg.wasImpostor)
+    setTimeout(() => {
+      if (!gameEnded) {
+        meetingUI.hide()
+        player.setFrozen(false)
+      }
+    }, MEETING_RESULT_DISPLAY_MS)
+  })
+
+  netClient.on(MESSAGE_TYPE.GAME_OVER, (msg) => {
+    gameEnded = true
+    player.setFrozen(true)
+    meetingUI.hide()
+    const impostorName =
+      roster.get(msg.impostorId)?.name ?? (msg.impostorId === localPlayerId ? 'you' : 'Unknown')
+    showGameOver(msg.winner, impostorName)
+  })
+
+  netClient.on(MESSAGE_TYPE.TELEPORT, (msg) => {
+    player.teleportTo(msg.position)
   })
 
   netClient.on(MESSAGE_TYPE.START, () => {
@@ -125,6 +246,7 @@ function startGame(lobby) {
     player.update(deltaTime)
     interactSystem.update()
     remotePlayers.update(deltaTime)
+    if (taskInteraction) taskInteraction.update(deltaTime, interactKeyDown)
 
     stateSendAccumulator += deltaTime
     if (stateSendAccumulator >= STATE_SEND_INTERVAL) {
@@ -152,6 +274,10 @@ const lobby = showLobby({
     connect(`ws://${address}`, name, lobby)
   },
   onStart() {
+    if (roster.size < MIN_PLAYERS_TO_START) {
+      lobby.showConnectionError(`Need at least ${MIN_PLAYERS_TO_START} players to start.`)
+      return
+    }
     netClient.send(MESSAGE_TYPE.START, {})
   },
 })

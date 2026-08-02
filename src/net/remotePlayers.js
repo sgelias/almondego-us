@@ -46,6 +46,10 @@ export function createRemotePlayers(scene) {
       )
       const label = createLabel(name)
       mesh.add(label)
+      // Tagged as an interactable "player" so an Impostor can target this
+      // avatar for a kill via interactSystem's raycast (added for Milestone 3;
+      // harmless for Crewmates, who are never allowed to send a kill message).
+      mesh.userData = { interactable: true, kind: 'player', killTargetId: id }
 
       const [x, y, z] = toMeshPosition(position)
       mesh.position.set(x, y, z)
@@ -86,5 +90,9 @@ export function createRemotePlayers(scene) {
     }
   }
 
-  return { upsert, remove, update }
+  function getMeshes() {
+    return [...players.values()].map((entry) => entry.mesh)
+  }
+
+  return { upsert, remove, update, getMeshes }
 }

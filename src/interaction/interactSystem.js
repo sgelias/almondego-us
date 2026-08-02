@@ -3,7 +3,11 @@ import * as THREE from 'three'
 const INTERACT_RANGE = 3
 const SCREEN_CENTER = new THREE.Vector2(0, 0)
 
-export function createInteractSystem(camera, interactables) {
+// SPEC_DEVIATION: design.md's original signature took a fixed `interactables`
+// array. Milestone 3 needs to raycast against remote-player meshes too, which
+// are added/removed as players join/die - a snapshot array can't reflect
+// that, so this now takes a callback returning the current list each frame.
+export function createInteractSystem(camera, getInteractables) {
   const raycaster = new THREE.Raycaster()
   raycaster.far = INTERACT_RANGE
 
@@ -25,7 +29,7 @@ export function createInteractSystem(camera, interactables) {
   return {
     update() {
       raycaster.setFromCamera(SCREEN_CENTER, camera)
-      const hits = raycaster.intersectObjects(interactables, false)
+      const hits = raycaster.intersectObjects(getInteractables(), false)
       currentTarget = hits.length > 0 ? hits[0].object : null
       prompt.style.display = currentTarget ? 'block' : 'none'
     },

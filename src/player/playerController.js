@@ -136,6 +136,14 @@ export function createPlayerController(camera, worldOctree, spawnPoint) {
       pitch = clampPitch(pitch - event.movementY * MOUSE_SENSITIVITY)
     },
 
+    // Position is an eye-height coordinate, matching the "position" convention
+    // used for network state (see main.js) - i.e. it maps to the capsule's end.
+    teleportTo(position) {
+      playerCollider.start.set(position[0], position[1] - PLAYER_SEGMENT_HEIGHT, position[2])
+      playerCollider.end.set(position[0], position[1], position[2])
+      playerVelocity.set(0, 0, 0)
+    },
+
     setFrozen(value) {
       frozen = value
       if (frozen) {
