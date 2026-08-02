@@ -69,9 +69,12 @@ function broadcastToAll(type, payload) {
   }
 }
 
-function checkAndBroadcastWin() {
+// checkTasks: false for every path triggered by a death (kill/ejection/
+// disconnect) - a death must never itself complete the task-win condition,
+// only an actual TASK_COMPLETE should (see gameState.checkWinCondition).
+function checkAndBroadcastWin(checkTasks) {
   if (!match) return
-  const winner = gameState.checkWinCondition(match)
+  const winner = gameState.checkWinCondition(match, { checkTasks })
   if (!winner) return
   match.phase = 'gameOver'
   broadcastToAll(MESSAGE_TYPE.GAME_OVER, { winner, impostorId: match.impostorId })
@@ -86,7 +89,7 @@ function finishMeeting() {
   if (ejectedId) gameState.recordDeath(match, ejectedId)
   gameState.endMeeting(match)
   broadcastToAll(MESSAGE_TYPE.MEETING_RESULT, { ejectedId, wasImpostor })
-  checkAndBroadcastWin()
+  checkAndBroadcastWin(false)
 }
 
 wss.on('connection', (socket) => {
@@ -158,7 +161,7 @@ wss.on('connection', (socket) => {
 
       const progress = gameState.completeTask(match, playerId, message.taskId)
       broadcastToAll(MESSAGE_TYPE.TASKS_PROGRESS, { completed: progress.completed, total: progress.total })
-      checkAndBroadcastWin()
+      checkAndBroadcastWin(true)
       return
     }
 
@@ -172,7 +175,7 @@ wss.on('connection', (socket) => {
 
       gameState.recordDeath(match, targetId)
       broadcastToAll(MESSAGE_TYPE.PLAYER_DIED, { id: targetId, cause: 'killed' })
-      checkAndBroadcastWin()
+      checkAndBroadcastWin(false)
       return
     }
 
@@ -231,7 +234,7 @@ wss.on('connection', (socket) => {
         broadcastToAll(MESSAGE_TYPE.GAME_OVER, { winner: 'crew', impostorId: match.impostorId })
       } else {
         gameState.recordDeath(match, playerId)
-        checkAndBroadcastWin()
+        checkAndBroadcastWin(false)
       }
     }
   })

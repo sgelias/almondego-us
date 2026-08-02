@@ -100,6 +100,24 @@ test('checkWinCondition returns crew immediately once the impostor is no longer 
   assert.equal(checkWinCondition(match), 'crew')
 })
 
+test('killing the one Crewmate still behind on tasks must not itself win the game for the crew (death is never task progress)', () => {
+  const match = createMatch(['a', 'b', 'c', 'd'], seededRandom(11))
+  const impostorId = ['a', 'b', 'c', 'd'].find((id) => getRole(match, id) === 'impostor')
+  const crewIds = ['a', 'b', 'c', 'd'].filter((id) => id !== impostorId)
+  const [laggard, ...onTime] = crewIds
+
+  // Survivors finish everything first...
+  for (const survivorId of onTime) {
+    for (const taskId of getAssignedTasks(match, survivorId)) completeTask(match, survivorId, taskId)
+  }
+  // ...then the impostor kills the one Crewmate who never finished theirs.
+  recordDeath(match, laggard)
+
+  // The kill/ejection/disconnect path always checks with { checkTasks: false } -
+  // a death must only ever be able to trigger the parity branch, never allDone.
+  assert.notEqual(checkWinCondition(match, { checkTasks: false }), 'crew')
+})
+
 test('a dead crewmate\'s unfinished tasks are excluded from the win check (a Crewmate death must not make the task-win path unreachable)', () => {
   const match = createMatch(['a', 'b', 'c', 'd'], seededRandom(11))
   const impostorId = ['a', 'b', 'c', 'd'].find((id) => getRole(match, id) === 'impostor')

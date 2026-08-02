@@ -104,8 +104,8 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 | GAME-02 | P1: Crewmate task list (3 tasks) shown on role reveal | Tasks (T4, T8) | Implementing (needs browser playtest — HUD rendering) |
 | GAME-03 | P1: Hold-to-complete task interaction, synced to server | Tasks (T9, T12) | Implementing (needs browser playtest — hold-interaction UI); server sync verified via smoke test |
 | GAME-04 | P1: Invalid task interactions are inert | Tasks (T5, T9, T13) | Implementing (needs browser playtest — prompt suppression) |
-| GAME-05 | P1: All-tasks-done triggers Crewmate win | Tasks (T4, T12) | Verified (via smoke test, incl. dead-crewmate regression — STATE.md L-009) |
-| GAME-06 | P2: Impostor kill within range | Tasks (T4, T12) | Verified (via smoke test) |
+| GAME-05 | P1: All-tasks-done triggers Crewmate win | Tasks (T4, T12) | Verified (via smoke test, incl. dead-crewmate regression — STATE.md L-009, L-011) |
+| GAME-06 | P2: Impostor kill within range | Tasks (T4, T12) | Verified (via smoke test, incl. kill-must-not-itself-win-by-tasks regression — STATE.md L-011) |
 | GAME-07 | P2: Emergency-button triggers meeting | Tasks (T6, T10, T12) | Verified (via smoke test — server logic); UI needs browser playtest |
 | GAME-08 | P2: Voting phase, one vote per living player | Tasks (T10, T12) | Verified (via smoke test — server logic); UI needs browser playtest (see STATE.md L-008, pointer-lock release) |
 | GAME-09 | P2: Vote tally, ejection rule, Impostor reveal | Tasks (T4, T12) | Verified (via smoke test) |

@@ -11,11 +11,15 @@ function pickRandomSubset(items, count, randomFn) {
   return pool.slice(0, count)
 }
 
-// Only living Crewmates' tasks count. Without this, a dead Crewmate's
-// unfinished tasks stay in the denominator forever - since the server also
-// rejects taskComplete from the dead (see completeTask/isAlive), the
-// remaining crew could never reach 100% and the task-win path would be
-// permanently unreachable after any death.
+// Only living Crewmates' tasks count, so a dead Crewmate's unfinished tasks
+// don't stay in the denominator forever (the server rejects taskComplete
+// from the dead - see completeTask/isAlive - so nothing could ever move
+// them to completed). checkWinCondition below only consults this from the
+// TASK_COMPLETE path, specifically so a kill/ejection/disconnect can never
+// shrink the denominator into an unearned win by removing a laggard from
+// consideration (see STATE.md L-011) - it must stay possible for a task
+// win to become reachable again after a death, without a death itself ever
+// being treated as task progress.
 function tasksSummary(match) {
   let completed = 0
   let total = 0
@@ -75,11 +79,19 @@ export function recordDeath(match, playerId) {
   match.alive.delete(playerId)
 }
 
-export function checkWinCondition(match) {
+// checkTasks defaults to true (used after an actual TASK_COMPLETE) but the
+// kill/ejection/disconnect paths in server/index.js pass false: a death
+// must only ever be able to trigger the parity/impostor-alive branches
+// below, never the allDone branch - otherwise killing (or disconnecting)
+// the one Crewmate still behind on tasks would hand the crew a win they
+// never actually finished (see STATE.md L-011).
+export function checkWinCondition(match, { checkTasks = true } = {}) {
   if (!match.alive.has(match.impostorId)) return 'crew'
 
-  const { allDone } = tasksSummary(match)
-  if (allDone) return 'crew'
+  if (checkTasks) {
+    const { allDone } = tasksSummary(match)
+    if (allDone) return 'crew'
+  }
 
   const livingCrewCount = match.alive.size - 1
   if (livingCrewCount <= 1) return 'impostor'
