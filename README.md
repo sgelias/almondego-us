@@ -9,15 +9,18 @@ Feito em JavaScript puro: sem build, sem bundler, sem framework.
 ## Como rodar
 
 ```bash
-npm install
-npm start
+yarn
+yarn start
 ```
+
+`yarn start` sobe tudo: o servidor de partida e o servidor do cliente, num
+processo só.
 
 Abra o endereço que aparecer no terminal (por padrão `http://localhost:8843`)
 e clique em **Entrar na partida**. Sozinho já funciona — as vagas que sobrarem
 viram bots.
 
-**Para jogar com mais gente na mesma rede:** só uma máquina roda `npm start`.
+**Para jogar com mais gente na mesma rede:** só uma máquina roda `yarn start`.
 As outras abrem, no navegador, o endereço de rede que o terminal mostrou
 (algo como `http://192.168.1.10:8843`) e clicam no mesmo **Entrar na partida**.
 Não existe escolher entre hospedar ou entrar: cada um se conecta ao servidor
@@ -25,9 +28,9 @@ que serviu a página, e quem entrar primeiro vira o anfitrião — é quem vê o
 botão **Iniciar Partida**.
 
 ```bash
-npm test     # 184 testes
-npm run server  # só o servidor de partida
-npm run web     # só o servidor do cliente
+yarn test     # 184 testes
+yarn server   # só o servidor de partida
+yarn web      # só o servidor do cliente
 ```
 
 ## Controles
