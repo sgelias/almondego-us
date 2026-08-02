@@ -12,7 +12,7 @@ function styleOverlay(el) {
   el.style.justifyContent = 'flex-start'
 }
 
-export function showLobby({ onJoin, onStart }) {
+export function showLobby({ onJoin, onStart, defaultServerAddress = '' }) {
   const overlay = document.createElement('div')
   styleOverlay(overlay)
 
@@ -64,6 +64,17 @@ export function showLobby({ onJoin, onStart }) {
   primaryButton(joinButton)
   panel.appendChild(joinButton)
 
+  // Filled in once /server-info answers - the host can read the address to
+  // give their friends straight off the screen instead of the terminal.
+  const shareLine = document.createElement('div')
+  shareLine.style.display = 'none'
+  shareLine.style.textAlign = 'center'
+  shareLine.style.fontSize = '0.85rem'
+  shareLine.style.color = '#8fd3ff'
+  shareLine.style.marginTop = '0.2rem'
+  shareLine.style.userSelect = 'all'
+  panel.appendChild(shareLine)
+
   const hint = document.createElement('div')
   hint.textContent = 'Sozinho já dá: as vagas que sobrarem viram bots.'
   hint.style.textAlign = 'center'
@@ -85,6 +96,10 @@ export function showLobby({ onJoin, onStart }) {
   const addressInput = document.createElement('input')
   addressInput.type = 'text'
   addressInput.placeholder = 'ex: 192.168.1.10:8080'
+  // Pre-filled with the address the automatic path would use, so the field
+  // shows what is actually happening rather than sitting empty and asking
+  // the player to know it.
+  addressInput.value = defaultServerAddress
   textInput(addressInput)
   addressInput.style.marginTop = '0.4rem'
   addressInput.style.width = '100%'
@@ -260,6 +275,18 @@ export function showLobby({ onJoin, onStart }) {
     },
     setConnected() {
       panel.style.display = 'none'
+    },
+    // Address other machines on the network should open, and the real server
+    // address for the manual field.
+    setNetworkInfo({ webUrl, serverAddress }) {
+      if (webUrl) {
+        shareLine.textContent = `Outros jogadores abrem: ${webUrl}`
+        shareLine.style.display = 'block'
+      }
+      // Never overwrite something the player has already typed.
+      if (serverAddress && addressInput.value === defaultServerAddress) {
+        addressInput.value = serverAddress
+      }
     },
     showConnectionError(message) {
       errorMessage.textContent = message

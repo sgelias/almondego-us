@@ -34,7 +34,22 @@ function safePath(urlPath) {
   return full.startsWith(ROOT) ? full : null
 }
 
+const MATCH_PORT = process.env.PORT || 8080
+
 createServer(async (request, response) => {
+  // The page cannot know the machine's LAN address on its own - it only sees
+  // whatever hostname was typed, which is "localhost" for the host. Serving
+  // it here lets the lobby show the address to hand to other players, and
+  // pre-fill the manual server field with something real.
+  if (request.url.split('?')[0] === '/server-info') {
+    response.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    })
+    response.end(JSON.stringify({ lanAddress: getLanAddress(), matchPort: Number(MATCH_PORT), webPort: Number(PORT) }))
+    return
+  }
+
   let filePath = safePath(request.url === '/' ? '/index.html' : request.url)
   if (!filePath) {
     response.writeHead(403).end('Forbidden')

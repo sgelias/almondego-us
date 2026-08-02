@@ -804,6 +804,7 @@ function matchServerUrl(overrideAddress) {
 }
 
 const lobby = showLobby({
+  defaultServerAddress: `${window.location.hostname || 'localhost'}:${DEFAULT_PORT}`,
   onJoin(address, name) {
     connect(matchServerUrl(address), name, lobby)
   },
@@ -814,3 +815,17 @@ const lobby = showLobby({
 
 // A research challenge to work on while waiting for the match to fill.
 lobby.showResearchChallenge(drawResearchQuestion(Math.random))
+
+// The page only knows the hostname that was typed - "localhost" for the
+// host - so the LAN address to share comes from the server that served it.
+// Failure is fine: the field already holds a working derived address.
+fetch('/server-info')
+  .then((response) => (response.ok ? response.json() : null))
+  .then((info) => {
+    if (!info) return
+    lobby.setNetworkInfo({
+      webUrl: `http://${info.lanAddress}:${info.webPort}`,
+      serverAddress: `${info.lanAddress}:${info.matchPort}`,
+    })
+  })
+  .catch(() => {})
