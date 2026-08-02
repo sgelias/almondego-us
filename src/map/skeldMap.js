@@ -3,15 +3,17 @@ import { ROOM_LAYOUT } from '../../shared/skeldRooms.js'
 import { CORRIDOR_WIDTH, SKELD_CORRIDORS } from '../../shared/skeldCorridors.js'
 import { TASK_LOCATIONS } from '../../shared/taskPool.js'
 import { VENT_LOCATIONS } from '../../shared/ventPool.js'
+import { addRoomProps } from './roomProps.js'
+import { TEXTURES, applyBoxUvScale } from './textures.js'
 
 const WALL_THICKNESS = 0.3
 const FLOOR_THICKNESS = 0.2
 const CEILING_THICKNESS = 0.2
 const WALL_EPSILON = 1e-6
 
-const FLOOR_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x3c4654, roughness: 0.9 })
-const WALL_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x7c8b9e, roughness: 0.75 })
-const CEILING_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x2a323d, roughness: 0.95 })
+const FLOOR_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x3c4654, roughness: 0.9, map: TEXTURES.floor })
+const WALL_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x7c8b9e, roughness: 0.75, map: TEXTURES.wall })
+const CEILING_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x2a323d, roughness: 0.95, map: TEXTURES.ceiling })
 // Emissive strips do the atmospheric work that per-room point lights would
 // otherwise do, at zero per-fragment lighting cost - every MeshStandardMaterial
 // evaluates every light in the scene, so 14 room lights would be paid for on
@@ -21,7 +23,7 @@ const LIGHT_STRIP_MATERIAL = new THREE.MeshStandardMaterial({
   emissive: 0xbfe4ff,
   emissiveIntensity: 1.4,
 })
-const TRIM_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x4d5a6b, roughness: 0.6, metalness: 0.3 })
+const TRIM_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x4d5a6b, roughness: 0.6, metalness: 0.3, map: TEXTURES.metal })
 const TASK_MATERIAL = new THREE.MeshStandardMaterial({
   color: 0xffcc00,
   emissive: 0xffaa00,
@@ -35,7 +37,7 @@ const EMERGENCY_BUTTON_MATERIAL = new THREE.MeshStandardMaterial({
 })
 
 function addFloorSlab(group, centerX, centerZ, width, depth) {
-  const geometry = new THREE.BoxGeometry(width, FLOOR_THICKNESS, depth)
+  const geometry = applyBoxUvScale(new THREE.BoxGeometry(width, FLOOR_THICKNESS, depth), width, FLOOR_THICKNESS, depth)
   const mesh = new THREE.Mesh(geometry, FLOOR_MATERIAL)
   mesh.position.set(centerX, -FLOOR_THICKNESS / 2, centerZ)
   group.add(mesh)
@@ -49,7 +51,7 @@ function addFloorSlab(group, centerX, centerZ, width, depth) {
 // the octree makes that failure structurally impossible rather than
 // something to be careful about.
 function addCeilingSlab(group, centerX, centerZ, width, depth, height) {
-  const geometry = new THREE.BoxGeometry(width, CEILING_THICKNESS, depth)
+  const geometry = applyBoxUvScale(new THREE.BoxGeometry(width, CEILING_THICKNESS, depth), width, CEILING_THICKNESS, depth)
   const mesh = new THREE.Mesh(geometry, CEILING_MATERIAL)
   mesh.position.set(centerX, height + CEILING_THICKNESS / 2, centerZ)
   group.add(mesh)
@@ -85,8 +87,8 @@ function buildWallWithGaps(group, fixedCoord, rangeStart, rangeEnd, height, gapC
     const center = (start + end) / 2
     const geometry =
       axis === 'x'
-        ? new THREE.BoxGeometry(length, height, WALL_THICKNESS)
-        : new THREE.BoxGeometry(WALL_THICKNESS, height, length)
+        ? applyBoxUvScale(new THREE.BoxGeometry(length, height, WALL_THICKNESS), length, height, WALL_THICKNESS)
+        : applyBoxUvScale(new THREE.BoxGeometry(WALL_THICKNESS, height, length), WALL_THICKNESS, height, length)
     const mesh = new THREE.Mesh(geometry, WALL_MATERIAL)
     if (axis === 'x') {
       mesh.position.set(center, height / 2, fixedCoord)
@@ -190,8 +192,8 @@ function buildCorridorSegment(collision, decor, x1, z1, x2, z2, height) {
     const midZ = (cz1 + cz2) / 2
 
     const floorGeometry = runsAlongX
-      ? new THREE.BoxGeometry(chunkLength, FLOOR_THICKNESS, CORRIDOR_WIDTH)
-      : new THREE.BoxGeometry(CORRIDOR_WIDTH, FLOOR_THICKNESS, chunkLength)
+      ? applyBoxUvScale(new THREE.BoxGeometry(chunkLength, FLOOR_THICKNESS, CORRIDOR_WIDTH), chunkLength, FLOOR_THICKNESS, CORRIDOR_WIDTH)
+      : applyBoxUvScale(new THREE.BoxGeometry(CORRIDOR_WIDTH, FLOOR_THICKNESS, chunkLength), CORRIDOR_WIDTH, FLOOR_THICKNESS, chunkLength)
     const floor = new THREE.Mesh(floorGeometry, FLOOR_MATERIAL)
     floor.position.set(midX, -FLOOR_THICKNESS / 2, midZ)
     collision.add(floor)
@@ -217,7 +219,7 @@ function buildCorridorSegment(collision, decor, x1, z1, x2, z2, height) {
     )
 
     if (runsAlongX) {
-      const wallGeometry = new THREE.BoxGeometry(chunkLength, height, WALL_THICKNESS)
+      const wallGeometry = applyBoxUvScale(new THREE.BoxGeometry(chunkLength, height, WALL_THICKNESS), chunkLength, height, WALL_THICKNESS)
       const wallNorth = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
       wallNorth.position.set(midX, height / 2, midZ + CORRIDOR_WIDTH / 2)
       collision.add(wallNorth)
@@ -225,7 +227,7 @@ function buildCorridorSegment(collision, decor, x1, z1, x2, z2, height) {
       wallSouth.position.set(midX, height / 2, midZ - CORRIDOR_WIDTH / 2)
       collision.add(wallSouth)
     } else {
-      const wallGeometry = new THREE.BoxGeometry(WALL_THICKNESS, height, chunkLength)
+      const wallGeometry = applyBoxUvScale(new THREE.BoxGeometry(WALL_THICKNESS, height, chunkLength), WALL_THICKNESS, height, chunkLength)
       const wallEast = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
       wallEast.position.set(midX + CORRIDOR_WIDTH / 2, height / 2, midZ)
       collision.add(wallEast)
@@ -240,7 +242,7 @@ function buildCorridorSegment(collision, decor, x1, z1, x2, z2, height) {
 // perpendicular corridor segments always have continuous floor under their
 // turn regardless of exactly where each segment's own box ends.
 function buildBendPatch(group, x, z) {
-  const geometry = new THREE.BoxGeometry(CORRIDOR_WIDTH, FLOOR_THICKNESS, CORRIDOR_WIDTH)
+  const geometry = applyBoxUvScale(new THREE.BoxGeometry(CORRIDOR_WIDTH, FLOOR_THICKNESS, CORRIDOR_WIDTH), CORRIDOR_WIDTH, FLOOR_THICKNESS, CORRIDOR_WIDTH)
   const mesh = new THREE.Mesh(geometry, FLOOR_MATERIAL)
   mesh.position.set(x, -FLOOR_THICKNESS / 2, z)
   group.add(mesh)
@@ -408,6 +410,7 @@ export function buildSkeldMap() {
 
   for (const room of ROOM_LAYOUT) {
     buildRoom(collision, decor, room, corridors)
+    addRoomProps(decor, room)
   }
   const { segments, bends } = collectCorridorGeometry(corridors, roomsById)
   for (const segment of segments) {

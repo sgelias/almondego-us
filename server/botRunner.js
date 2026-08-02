@@ -208,9 +208,17 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
           return
         }
       } else {
-        // Stalk: close the distance on the isolated target.
-        bot.path = [[bot.position[0], bot.position[2]], [targetPosition[0], targetPosition[2]]]
-        bot.pathIndex = 1
+        // Stalk: close the distance on the isolated target. A straight line
+        // is only safe when both are inside the same open room - otherwise
+        // it cuts through walls, so fall back to a routed path.
+        const botRoom = nav.roomIdAt(bot.position[0], bot.position[2])
+        const targetRoom = nav.roomIdAt(targetPosition[0], targetPosition[2])
+        if (botRoom && botRoom === targetRoom) {
+          bot.path = [[bot.position[0], bot.position[2]], [targetPosition[0], targetPosition[2]]]
+          bot.pathIndex = 1
+        } else if (targetRoom) {
+          setPath(bot, targetRoom, null)
+        }
       }
     }
 

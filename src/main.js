@@ -13,6 +13,7 @@ import { createRoleUI } from './game/roleUI.js'
 import { createTaskInteraction } from './game/taskInteraction.js'
 import { createMeetingUI } from './game/meetingUI.js'
 import { showGameOver } from './game/gameOverScreen.js'
+import { createVentTransition } from './ui/ventTransition.js'
 import { MESSAGE_TYPE } from '../shared/protocol.js'
 import { TASK_LOCATIONS } from '../shared/taskPool.js'
 
@@ -98,6 +99,7 @@ const interactSystem = createInteractSystem(
 )
 
 const roleUI = createRoleUI()
+const ventTransition = createVentTransition()
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight
@@ -255,7 +257,9 @@ function connect(url, name, lobby) {
     document.exitPointerLock()
     meetingUI.showDiscussion(msg.discussionSeconds)
     setTimeout(() => {
-      if (!gameEnded) meetingUI.showVoting(msg.livingPlayers, msg.votingSeconds)
+      // localAlive is read here, not when the meeting started, so a player
+      // killed during the discussion phase still loses the vote.
+      if (!gameEnded) meetingUI.showVoting(msg.livingPlayers, msg.votingSeconds, localAlive)
     }, msg.discussionSeconds * 1000)
   })
 
@@ -290,7 +294,10 @@ function connect(url, name, lobby) {
   })
 
   netClient.on(MESSAGE_TYPE.TELEPORT, (msg) => {
-    player.teleportTo(msg.position)
+    // The move happens at the midpoint, while the screen is black, so the
+    // player never sees the world snap - they see themselves go into a duct
+    // and come out somewhere else.
+    ventTransition.play(() => player.teleportTo(msg.position))
   })
 
   netClient.on(MESSAGE_TYPE.START, () => {

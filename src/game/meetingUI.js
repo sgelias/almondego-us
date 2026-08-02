@@ -53,7 +53,11 @@ export function createMeetingUI({ onVote }) {
       renderCountdown('Discussão', seconds)
     },
 
-    showVoting(livingPlayers, seconds) {
+    // canVote is false for dead players. The server already rejects their
+    // votes, but without this the UI still handed them working buttons that
+    // visibly "accepted" a vote which was then silently dropped - the client
+    // lying to its own player (same class of bug as STATE.md L-008).
+    showVoting(livingPlayers, seconds, canVote) {
       overlay.innerHTML = ''
       overlay.style.display = 'flex'
 
@@ -62,6 +66,22 @@ export function createMeetingUI({ onVote }) {
       overlay.appendChild(title)
 
       renderCountdown('Votação termina em', seconds)
+
+      if (!canVote) {
+        const notice = document.createElement('div')
+        notice.textContent = 'Você está morto e não pode votar.'
+        notice.style.color = '#ff6b6b'
+        notice.style.marginBottom = '0.5rem'
+        overlay.appendChild(notice)
+
+        for (const player of livingPlayers) {
+          const row = document.createElement('div')
+          row.textContent = player.name
+          row.style.opacity = '0.55'
+          overlay.appendChild(row)
+        }
+        return
+      }
 
       let hasVoted = false
       const buttons = []

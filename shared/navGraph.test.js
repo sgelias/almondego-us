@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createNavGraph } from './navGraph.js'
 import { ROOM_LAYOUT } from './skeldRooms.js'
 import { SKELD_CORRIDORS } from './skeldCorridors.js'
+import { TASK_LOCATIONS } from './taskPool.js'
 
 const nav = createNavGraph(ROOM_LAYOUT, SKELD_CORRIDORS)
 
@@ -76,6 +77,80 @@ test('waypointsTo produces no zero-length duplicate points', () => {
   const points = nav.waypointsTo(nav.roomCenter('cafeteria'), 'shields', null)
   for (let i = 0; i < points.length - 1; i += 1) {
     assert.notDeepEqual(points[i], points[i + 1], `duplicate waypoint at index ${i}`)
+  }
+})
+
+// A point is legal for a walking bot if it is inside a room, or within half
+// the corridor width of some corridor centreline. Anything else is inside a
+// wall or out in the void.
+function isWalkable(x, z) {
+  if (nav.roomIdAt(x, z)) return true
+  const HALF = 2
+  for (const corridor of SKELD_CORRIDORS) {
+    for (let i = 0; i < corridor.points.length - 1; i += 1) {
+      const [ax, az] = corridor.points[i]
+      const [bx, bz] = corridor.points[i + 1]
+      const dx = bx - ax
+      const dz = bz - az
+      const lengthSq = dx * dx + dz * dz
+      let t = lengthSq < 1e-9 ? 0 : ((x - ax) * dx + (z - az) * dz) / lengthSq
+      t = Math.max(0, Math.min(1, t))
+      if (Math.hypot(x - (ax + dx * t), z - (az + dz * t)) <= HALF + 0.01) return true
+    }
+  }
+  return false
+}
+
+function assertPathWalkable(points, label) {
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const [x1, z1] = points[i]
+    const [x2, z2] = points[i + 1]
+    const steps = Math.max(2, Math.ceil(Math.hypot(x2 - x1, z2 - z1) * 4))
+    for (let s = 0; s <= steps; s += 1) {
+      const t = s / steps
+      const x = x1 + (x2 - x1) * t
+      const z = z1 + (z2 - z1) * t
+      assert.ok(isWalkable(x, z), `${label}: path leaves walkable space at ${x.toFixed(2)},${z.toFixed(2)}`)
+    }
+  }
+}
+
+test('a path starting inside a room never leaves walkable space', () => {
+  for (const from of ROOM_LAYOUT) {
+    for (const to of ROOM_LAYOUT) {
+      const points = nav.waypointsTo(nav.roomCenter(from.id), to.id, null)
+      assert.ok(points, `no path ${from.id} -> ${to.id}`)
+      assertPathWalkable(points, `${from.id} -> ${to.id}`)
+    }
+  }
+})
+
+test('a path starting mid-corridor walks the corridor out instead of cutting through walls', () => {
+  // This is the case that had bots visibly walking through walls: from a
+  // corridor, roomIdAt returns null and the old code drew a straight line
+  // to the nearest room's centre.
+  for (const corridor of SKELD_CORRIDORS) {
+    for (let i = 0; i < corridor.points.length - 1; i += 1) {
+      const [ax, az] = corridor.points[i]
+      const [bx, bz] = corridor.points[i + 1]
+      for (const t of [0.25, 0.5, 0.75]) {
+        const x = ax + (bx - ax) * t
+        const z = az + (bz - az) * t
+        for (const target of ['cafeteria', 'reactor', 'navigation']) {
+          const points = nav.waypointsTo([x, z], target, null)
+          assert.ok(points, `no path from corridor ${corridor.roomAId}->${corridor.roomBId} to ${target}`)
+          assertPathWalkable(points, `corridor ${corridor.roomAId}->${corridor.roomBId} @${t} -> ${target}`)
+        }
+      }
+    }
+  }
+})
+
+test('a path to a task offset stays walkable all the way to the console', () => {
+  for (const task of TASK_LOCATIONS) {
+    const points = nav.waypointsTo(nav.roomCenter('cafeteria'), task.roomId, task.offset)
+    assert.ok(points, `no path to task ${task.id}`)
+    assertPathWalkable(points, `task ${task.id}`)
   }
 })
 
