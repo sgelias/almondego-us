@@ -6,7 +6,26 @@ local, e dá para jogar **sozinho** — as vagas que sobram viram bots.
 
 Feito em JavaScript puro: sem build, sem bundler, sem framework.
 
-## Como rodar
+## Instalar no Ubuntu
+
+Baixe o `.deb` da [página de releases](https://github.com/sgelias/almondego-us/releases)
+e instale:
+
+```bash
+sudo apt install ./almondegous_1.0.0_amd64.deb
+```
+
+Depois é só abrir **AlmondegoUs** no menu de aplicativos, ou rodar
+`almondegous` no terminal. Ele sobe o jogo e abre o navegador sozinho.
+
+Não precisa instalar mais nada: o pacote traz o próprio Node e o próprio
+three.js, então funciona **sem internet** — o que importa numa sala com
+wifi ruim.
+
+Quem não usa `.deb` pode baixar o `.tar.gz` da mesma página, descompactar e
+rodar `./almondegous`.
+
+## Como rodar a partir do código
 
 ```bash
 yarn
@@ -28,9 +47,10 @@ que serviu a página, e quem entrar primeiro vira o anfitrião — é quem vê o
 botão **Iniciar Partida**.
 
 ```bash
-yarn test     # 184 testes
+yarn test     # 186 testes
 yarn server   # só o servidor de partida
 yarn web      # só o servidor do cliente
+yarn package  # gera o .deb e o .tar.gz em dist/
 ```
 
 ## Controles
