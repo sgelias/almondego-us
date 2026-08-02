@@ -93,6 +93,7 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 - WHEN a new meeting or kill is attempted while a meeting or game-over state is already active THEN the server SHALL ignore it.
 - WHEN "Start Game" is clicked with fewer than 3 connected players THEN the client SHALL show a message instead of starting.
 - WHEN a dead player's client tries to send a task/kill/vote/meeting message THEN the server SHALL ignore it (dead players have no valid actions).
+- WHEN a Crewmate dies (killed, ejected, or disconnected) while still holding incomplete tasks THEN the task-completion win path is closed for the rest of the match (per GAME-12, a dead player can never complete a task, so those tasks can never be finished) — the match remains winnable via ejecting the Impostor or via parity, just not via 100% task completion. **(Known v1 edge, documented here rather than engineered around — see STATE.md L-011):** a death is never itself allowed to trigger the task-win condition (that would let a kill/ejection hand the crew an unearned win by shrinking who still counts), so the two behaviors necessarily come as a pair.
 
 ---
 
