@@ -8,9 +8,9 @@ Among Us is fundamentally a social game — Milestone 1 proved the first-person 
 
 ## Goals
 
-- [ ] A host can start a server from a terminal and share their LAN IP for others to join
-- [ ] 2+ players in the same map see each other's avatars move smoothly in real time
-- [ ] The host can start the match once players have joined, moving everyone from the lobby into the 3D scene together
+- [x] A host can start a server from a terminal and share their LAN IP for others to join
+- [x] 2+ players in the same map see each other's avatars move smoothly in real time
+- [x] The host can start the match once players have joined, moving everyone from the lobby into the 3D scene together
 
 ## Out of Scope
 
@@ -91,16 +91,16 @@ Among Us is fundamentally a social game — Milestone 1 proved the first-person 
 | NET-01 | P1: Server listens, logs LAN IP:port | Tasks: T3 | Verified (server-side, via smoke test) |
 | NET-02 | P1: Player join assigns id, notifies others | Tasks: T3, T4 | Verified (server+client, via smoke test) |
 | NET-03 | P1: Client state broadcast/relay | Tasks: T3, T4 | Verified (server+client, via smoke test) |
-| NET-04 | P1: Remote player avatar render + interpolation | Tasks: T6 | Implementing (rendering — needs browser playtest) |
-| NET-05 | P1: Disconnect removes avatar for others | Tasks: T3, T6 | Implementing (server relay verified; avatar removal needs browser playtest) |
-| NET-06 | P2: Join screen (host vs. join-by-IP + name) | Tasks: T5 | Implementing (needs browser playtest) |
-| NET-07 | P2: Live lobby player list | Tasks: T5, T7 | Implementing (needs browser playtest) |
+| NET-04 | P1: Remote player avatar render + interpolation | Tasks: T6 | Verified (browser playtest, 2026-08-02) |
+| NET-05 | P1: Disconnect removes avatar for others | Tasks: T3, T6 | Verified (smoke test + browser playtest, 2026-08-02) |
+| NET-06 | P2: Join screen (host vs. join-by-IP + name) | Tasks: T5 | Verified (browser playtest, 2026-08-02) |
+| NET-07 | P2: Live lobby player list | Tasks: T5, T7 | Verified (browser playtest, 2026-08-02) |
 | NET-08 | P2: Duplicate name suffixing | Tasks: T3 | Verified (server-side, via smoke test) |
-| NET-09 | P2: Host-triggered synchronized match start | Tasks: T3, T7 | Implementing (server-side gating verified; UI transition needs browser playtest) |
-| NET-10 | P3: Connection-failure feedback | Tasks: T4, T5 | Implementing (client event verified; UI display needs browser playtest) |
+| NET-09 | P2: Host-triggered synchronized match start | Tasks: T3, T7 | Verified (smoke test + browser playtest, 2026-08-02) |
+| NET-10 | P3: Connection-failure feedback | Tasks: T4, T5 | Verified (smoke test + browser playtest, 2026-08-02) |
 | NET-11 | Edge: host-as-player parity | Tasks: T3 | Verified (server-side, via smoke test) |
-| NET-12 | Edge: stale/out-of-order update discard | Tasks: T6 | Implementing (needs browser playtest) |
-| NET-13 | Edge: mid-match disconnect handling | Tasks: T3, T6 | Implementing (server relay verified; avatar removal needs browser playtest) |
+| NET-12 | Edge: stale/out-of-order update discard | Tasks: T6 | Verified (browser playtest, 2026-08-02) |
+| NET-13 | Edge: mid-match disconnect handling | Tasks: T3, T6 | Verified (smoke test + browser playtest, 2026-08-02) |
 
 **Coverage:** 13 total, 13 mapped to tasks, 0 unmapped
 
@@ -108,6 +108,8 @@ Among Us is fundamentally a social game — Milestone 1 proved the first-person 
 
 ## Success Criteria
 
-- [ ] Two+ players on the same LAN can join a lobby, see each other's names, and both transition into the 3D scene when the host starts
-- [ ] Each player sees every other player's avatar move smoothly and stay reasonably in sync (no teleporting, no long-lived desync)
-- [ ] A disconnect (closed tab) cleanly removes that player's avatar for everyone else without crashing the server or other clients
+- [x] Two+ players on the same LAN can join a lobby, see each other's names, and both transition into the 3D scene when the host starts
+- [x] Each player sees every other player's avatar move smoothly and stay reasonably in sync (no teleporting, no long-lived desync)
+- [x] A disconnect (closed tab) cleanly removes that player's avatar for everyone else without crashing the server or other clients
+
+**Confirmed via user playtest, 2026-08-02** (run together with `core-game-loop`'s full 4-window playtest).

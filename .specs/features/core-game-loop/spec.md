@@ -102,18 +102,18 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
 | GAME-01 | P1: Random single-Impostor role assignment, private reveal | Tasks (T4, T12) | Verified (via smoke test) |
-| GAME-02 | P1: Crewmate task list (3 tasks) shown on role reveal | Tasks (T4, T8) | Implementing (needs browser playtest — HUD rendering) |
-| GAME-03 | P1: Hold-to-complete task interaction, synced to server | Tasks (T9, T12) | Implementing (needs browser playtest — hold-interaction UI); server sync verified via smoke test |
-| GAME-04 | P1: Invalid task interactions are inert | Tasks (T5, T9, T13) | Implementing (needs browser playtest — prompt suppression) |
+| GAME-02 | P1: Crewmate task list (3 tasks) shown on role reveal | Tasks (T4, T8) | Verified (browser playtest, 2026-08-02) |
+| GAME-03 | P1: Hold-to-complete task interaction, synced to server | Tasks (T9, T12) | Verified (browser playtest, 2026-08-02) |
+| GAME-04 | P1: Invalid task interactions are inert | Tasks (T5, T9, T13) | Verified (browser playtest, 2026-08-02) |
 | GAME-05 | P1: All-tasks-done triggers Crewmate win | Tasks (T4, T12) | Verified (via smoke test, incl. dead-crewmate regression — STATE.md L-009, L-011) |
 | GAME-06 | P2: Impostor kill within range | Tasks (T4, T12) | Verified (via smoke test, incl. kill-must-not-itself-win-by-tasks regression — STATE.md L-011) |
-| GAME-07 | P2: Emergency-button triggers meeting | Tasks (T6, T10, T12) | Verified (via smoke test — server logic); UI needs browser playtest |
-| GAME-08 | P2: Voting phase, one vote per living player | Tasks (T10, T12) | Verified (via smoke test — server logic); UI needs browser playtest (see STATE.md L-008, pointer-lock release) |
+| GAME-07 | P2: Emergency-button triggers meeting | Tasks (T6, T10, T12) | Verified (smoke test + browser playtest, 2026-08-02) |
+| GAME-08 | P2: Voting phase, one vote per living player | Tasks (T10, T12) | Verified (smoke test + browser playtest, 2026-08-02 — incl. pointer-lock release, STATE.md L-008) |
 | GAME-09 | P2: Vote tally, ejection rule, Impostor reveal | Tasks (T4, T12) | Verified (via smoke test) |
 | GAME-10 | P2: Impostor ejected triggers Crewmate win | Tasks (T4, T12) | Verified (via smoke test) |
 | GAME-11 | P2: Parity triggers Impostor win | Tasks (T4, T12) | Verified (via smoke test — see STATE.md L-006, L-007) |
-| GAME-12 | P2: Dead player enters spectator state | Tasks (T12, T13) | Implementing (needs browser playtest); server-side alive-gating verified via smoke test |
-| GAME-13 | P3: Impostor-only vent teleport | Tasks (T2, T6, T12) | Verified (via smoke test — server logic); prompt suppression needs browser playtest |
+| GAME-12 | P2: Dead player enters spectator state | Tasks (T12, T13) | Verified (browser playtest, 2026-08-02) |
+| GAME-13 | P3: Impostor-only vent teleport | Tasks (T2, T6, T12) | Verified (smoke test + browser playtest, 2026-08-02) |
 | GAME-14 | Edge: Impostor disconnect ends game (Crewmate win) | Tasks (T12) | Verified (via smoke test) |
 | GAME-15 | Edge: min 3 players to start (1 impostor stays outnumbered from the start) | Tasks (T12, T13) | Verified (via smoke test — see STATE.md L-006) |
 
@@ -123,6 +123,8 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 
 ## Success Criteria
 
-- [ ] A 3+ player match can be played start-to-finish through either win path (all tasks done, or Impostor ejected/wins by parity) with every client agreeing on the outcome
-- [ ] No client ever learns another player's role except via a meeting's ejection reveal
-- [ ] A dead player can keep spectating without appearing to living players or being able to affect the match
+- [x] A 3+ player match can be played start-to-finish through either win path (all tasks done, or Impostor ejected/wins by parity) with every client agreeing on the outcome
+- [x] No client ever learns another player's role except via a meeting's ejection reveal
+- [x] A dead player can keep spectating without appearing to living players or being able to affect the match
+
+**Confirmed via user playtest, 2026-08-02.**

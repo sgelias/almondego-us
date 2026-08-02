@@ -1,7 +1,7 @@
 # State
 
-**Last Updated:** 2026-08-01
-**Current Work:** All 3 milestones are code-complete. Milestone 1 (First-Person Movement Core) is COMPLETE and user-verified via playtest. Milestone 2 (Local Multiplayer Foundation) and Milestone 3 (Core Game Loop, feature `core-game-loop`) are both code-complete — all server-side/protocol/game-rules logic is verified end-to-end via real multi-client WebSocket smoke tests (throwaway scripts, not the browser), but nothing DOM/Three.js-facing (lobby UI, remote avatar rendering, role/task HUD, meeting UI, game-over screen) has run in an actual browser yet. Blocked only on a human 4+ browser-window playtest of the full game — see Todos below and `core-game-loop/tasks.md`'s T13 status note.
+**Last Updated:** 2026-08-02
+**Current Work:** All 3 milestones are COMPLETE and user-verified. The user ran the full 4-browser-window playtest (2026-08-02) and confirmed everything works: movement/collision, lobby/join/networked avatar sync, role assignment, tasks, kill, vent, emergency meetings, voting/ejection, and all three win paths (task completion, Impostor ejection, parity). v1 scope per PROJECT.md is done. No open implementation work remains; see "Future Considerations" in ROADMAP.md for anything beyond v1.
 
 ---
 
@@ -46,7 +46,7 @@
 
 ## Active Blockers
 
-None. (The final 4+ browser-window playtest is tracked as an open Done-when item in `core-game-loop/tasks.md`'s T13, not a blocker — the code path to unblock it is just "user plays it in a browser", and this agent has no browser tooling this session to do it itself.)
+None. v1 is complete and playtest-confirmed.
 
 ---
 
@@ -144,8 +144,7 @@ None yet — captured in PROJECT.md "Explicitly out of scope" instead (multiple 
 
 ## Todos
 
-- [ ] Get the user's manual 4+ browser-window playtest of the FULL game (both `local-multiplayer` and `core-game-loop` — all code across all 3 milestones is now complete, so this one playtest covers everything not yet exercised in a real browser). Needs TWO processes: terminal 1 `npm run server` (logs the LAN address, default port 8080), terminal 2 a static file server from the project root (e.g. `python3 -m http.server 8843`) for the client. Open 4+ browser windows/tabs pointed at the static server; only the first-connected window is host and sees the Start Game button; the others join via `localhost:8080` (same machine) or the LAN address terminal 1 printed. Check: role reveal is private, Crewmate task HUD + hold-to-complete tasks, all-tasks-done Crewmate win, Impostor kill, Cafeteria emergency button meeting, discussion→voting→ejection, ejecting the Impostor as a Crewmate win, parity as an Impostor win, a dead player staying invisible to the living, and Impostor-only vent teleport (Crewmates should see no vent prompt at all).
-- [ ] On playtest pass: check off the remaining Done-when boxes in `local-multiplayer/tasks.md` (T7) and `core-game-loop/tasks.md` (T13), flip both spec.md's remaining "Implementing (needs browser playtest)" statuses to Verified, and mark both ROADMAP.md milestones' overall status line as fully verified.
+None. All Milestone 1-3 playtest items are closed out (confirmed 2026-08-02).
 
 ---
 

@@ -1,7 +1,7 @@
 # Core Game Loop Tasks
 
 **Design**: `.specs/features/core-game-loop/design.md`
-**Status**: In Progress — T1-T13 code complete and gate-passed (all unit tests green, server-side rules/wiring verified via real multi-client smoke-test scripts); awaiting a human 4+ browser-window manual playtest. See T13's status note below.
+**Status**: COMPLETE (2026-08-02) — T1-T13 done, all unit tests green, and the full 4+ browser-window manual playtest confirmed by the user. See T13's status note below.
 
 ---
 
@@ -347,9 +347,9 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [x] `node --test` passes (all prior unit tests still green — 38 total)
-- [ ] Manual playtest with 4+ browser windows: roles are assigned and private; the Crewmate(s) can complete tasks and see the shared progress counter; completing all tasks ends the match as a Crewmate win; separately, the Impostor can kill, the Cafeteria emergency button can call a meeting, a meeting runs discussion→voting→ejection, ejecting the Impostor ends the match as a Crewmate win, and reducing living Crewmates to parity ends it as an Impostor win; a dead player keeps moving locally but is invisible to the others; the Impostor can vent
-- [ ] All of spec.md's Success Criteria checked off
+- [x] `node --test` passes (all prior unit tests still green — 39 total)
+- [x] Manual playtest with 4+ browser windows: roles are assigned and private; the Crewmate(s) can complete tasks and see the shared progress counter; completing all tasks ends the match as a Crewmate win; separately, the Impostor can kill, the Cafeteria emergency button can call a meeting, a meeting runs discussion→voting→ejection, ejecting the Impostor ends the match as a Crewmate win, and reducing living Crewmates to parity ends it as an Impostor win; a dead player keeps moving locally but is invisible to the others; the Impostor can vent — confirmed by the user (2026-08-02)
+- [x] All of spec.md's Success Criteria checked off
 
 **Tests**: none (bootstrap/integration — verified via full manual multi-client playtest)
 **Gate**: build — `node --test` + manual 4+-window playthrough per spec.md Success Criteria
@@ -362,7 +362,7 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - A dead player's client kept running `taskInteraction.update` and could still send `kill`/`vent`/`callMeeting` client-side (the server would silently drop them, but the local UI would misleadingly show a task/kill as having "succeeded"). Fixed with a `localAlive` flag gating both (STATE.md L-008).
 - The interact prompt showed "Press E to interact" for every hit regardless of role/assignment, contradicting GAME-04/GAME-13's "no prompt" requirement, and said "Press" for tasks that actually need a 2s hold. Fixed by giving `interactSystem` an optional `getPromptText(target)` callback that main.js uses to suppress/customize the text per role and task-assignment state (STATE.md L-008).
 
-The manual playtest and Success Criteria boxes stay unchecked until a human confirms them in 4+ browser windows.
+**Confirmed (2026-08-02):** The user ran the full 4-browser-window playtest and reported everything working ("tudo funcionando") — all three win paths, meeting/voting flow, and vent movement.
 
 ---
 

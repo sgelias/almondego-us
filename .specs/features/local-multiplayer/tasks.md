@@ -1,7 +1,7 @@
 # Local Multiplayer Foundation Tasks
 
 **Design**: `.specs/features/local-multiplayer/design.md`
-**Status**: In Progress — T1-T6 code complete and gate-passed; T7 code complete (protocol layer verified via a real two-connection smoke test against the running server), awaiting a human two-browser-window manual playtest
+**Status**: COMPLETE (2026-08-02) — T1-T7 done, all gate checks passed, and the user's 4-browser-window playtest confirmed the full lobby/networking/avatar-sync layer working end-to-end.
 
 ---
 
@@ -197,10 +197,10 @@ T3, T4, T5, T6 ──→ T7  (main.js wiring: lobby → connect → play)
 
 **Done when**:
 - [x] `node --test` passes (protocol unit tests still green)
-- [ ] Manual playtest with `node server/index.js` running and 2 browser windows: both join the lobby, names appear on each other's list, host's Start Game moves both into the 3D scene, each sees the other's capsule+name move around, closing one window removes its avatar for the other
-- [ ] All of spec.md's Success Criteria checked off
+- [x] Manual playtest with `node server/index.js` running and 2+ browser windows: both join the lobby, names appear on each other's list, host's Start Game moves both into the 3D scene, each sees the other's capsule+name move around, closing one window removes its avatar for the other — confirmed by the user (2026-08-02) as part of the full `core-game-loop` 4-window playtest
+- [x] All of spec.md's Success Criteria checked off
 
-**Status note (2026-08-01):** Code complete. A self-review (see STATE.md L-003, L-004, L-005) caught and fixed three bugs before any browser playtest: remote avatars floated ~0.5 units above the floor (network position is the sender's eye height, not the capsule center), a disconnected player's name label was never removed from the DOM (only the mesh was disposed), and `connect()`/`startGame()` had no re-entrancy guard against a double-click or a duplicate `start` broadcast. The protocol layer (server relay + `net/client.js`) was verified end-to-end with real WebSocket connections via a throwaway script (join/host-designation/state-relay/start-gating/disconnect/connection-error all confirmed) — but nothing that touches the DOM, Three.js rendering, or the lobby UI has been exercised in an actual browser. The checkbox above stays unchecked until a human confirms it in two browser windows.
+**Status note (2026-08-02):** Code complete and now fully browser-verified. A self-review (see STATE.md L-003, L-004, L-005) caught and fixed three bugs before any browser playtest: remote avatars floated ~0.5 units above the floor (network position is the sender's eye height, not the capsule center), a disconnected player's name label was never removed from the DOM (only the mesh was disposed), and `connect()`/`startGame()` had no re-entrancy guard against a double-click or a duplicate `start` broadcast. The protocol layer (server relay + `net/client.js`) was verified end-to-end with real WebSocket connections via a throwaway script (join/host-designation/state-relay/start-gating/disconnect/connection-error all confirmed). The lobby UI, remote avatar rendering, and name labels were confirmed working by the user's 4-browser-window playtest of the full game (run together with `core-game-loop`'s T13 playtest, since both features share the same running session).
 
 **Tests**: none (bootstrap/integration — verified via full manual multi-client playtest)
 **Gate**: build — `node --test` + manual two-window playthrough per spec.md Success Criteria
