@@ -100,23 +100,23 @@ Milestone 2 proved players can see each other move in real time, but there's no 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| GAME-01 | P1: Random single-Impostor role assignment, private reveal | Design | Pending |
-| GAME-02 | P1: Crewmate task list (3 tasks) shown on role reveal | Design | Pending |
-| GAME-03 | P1: Hold-to-complete task interaction, synced to server | Design | Pending |
-| GAME-04 | P1: Invalid task interactions are inert | Design | Pending |
-| GAME-05 | P1: All-tasks-done triggers Crewmate win | Design | Pending |
-| GAME-06 | P2: Impostor kill within range | Design | Pending |
-| GAME-07 | P2: Body/emergency-button triggers meeting | Design | Pending |
-| GAME-08 | P2: Voting phase, one vote per living player | Design | Pending |
-| GAME-09 | P2: Vote tally, ejection rule, Impostor reveal | Design | Pending |
-| GAME-10 | P2: Impostor ejected triggers Crewmate win | Design | Pending |
-| GAME-11 | P2: Parity triggers Impostor win | Design | Pending |
-| GAME-12 | P2: Dead player enters spectator state | Design | Pending |
-| GAME-13 | P3: Impostor-only vent teleport | Design | Pending |
-| GAME-14 | Edge: Impostor disconnect ends game (Crewmate win) | Design | Pending |
-| GAME-15 | Edge: min 3 players to start (1 impostor stays outnumbered from the start) | Design | Pending |
+| GAME-01 | P1: Random single-Impostor role assignment, private reveal | Tasks (T4, T12) | Verified (via smoke test) |
+| GAME-02 | P1: Crewmate task list (3 tasks) shown on role reveal | Tasks (T4, T8) | Implementing (needs browser playtest — HUD rendering) |
+| GAME-03 | P1: Hold-to-complete task interaction, synced to server | Tasks (T9, T12) | Implementing (needs browser playtest — hold-interaction UI); server sync verified via smoke test |
+| GAME-04 | P1: Invalid task interactions are inert | Tasks (T5, T9, T13) | Implementing (needs browser playtest — prompt suppression) |
+| GAME-05 | P1: All-tasks-done triggers Crewmate win | Tasks (T4, T12) | Verified (via smoke test, incl. dead-crewmate regression — STATE.md L-009) |
+| GAME-06 | P2: Impostor kill within range | Tasks (T4, T12) | Verified (via smoke test) |
+| GAME-07 | P2: Emergency-button triggers meeting | Tasks (T6, T10, T12) | Verified (via smoke test — server logic); UI needs browser playtest |
+| GAME-08 | P2: Voting phase, one vote per living player | Tasks (T10, T12) | Verified (via smoke test — server logic); UI needs browser playtest (see STATE.md L-008, pointer-lock release) |
+| GAME-09 | P2: Vote tally, ejection rule, Impostor reveal | Tasks (T4, T12) | Verified (via smoke test) |
+| GAME-10 | P2: Impostor ejected triggers Crewmate win | Tasks (T4, T12) | Verified (via smoke test) |
+| GAME-11 | P2: Parity triggers Impostor win | Tasks (T4, T12) | Verified (via smoke test — see STATE.md L-006, L-007) |
+| GAME-12 | P2: Dead player enters spectator state | Tasks (T12, T13) | Implementing (needs browser playtest); server-side alive-gating verified via smoke test |
+| GAME-13 | P3: Impostor-only vent teleport | Tasks (T2, T6, T12) | Verified (via smoke test — server logic); prompt suppression needs browser playtest |
+| GAME-14 | Edge: Impostor disconnect ends game (Crewmate win) | Tasks (T12) | Verified (via smoke test) |
+| GAME-15 | Edge: min 3 players to start (1 impostor stays outnumbered from the start) | Tasks (T12, T13) | Verified (via smoke test — see STATE.md L-006) |
 
-**Coverage:** 15 total, 0 mapped to tasks, 15 unmapped ⚠️
+**Coverage:** 15 total, 15 mapped to tasks, 0 unmapped
 
 ---
 

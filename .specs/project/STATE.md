@@ -1,7 +1,7 @@
 # State
 
 **Last Updated:** 2026-08-01
-**Current Work:** Milestone 1 (First-Person Movement Core) is COMPLETE. Milestone 2 (Local Multiplayer Foundation, feature `local-multiplayer`) is code-complete (T1-T7) — the protocol/server/client layer is verified end-to-end via real WebSocket connections (a throwaway script, not the browser), but nothing DOM/Three.js-facing (lobby UI, remote avatar rendering) has run in an actual browser yet. Blocked only on a human two-browser-window playtest — see tasks.md status note.
+**Current Work:** All 3 milestones are code-complete. Milestone 1 (First-Person Movement Core) is COMPLETE and user-verified via playtest. Milestone 2 (Local Multiplayer Foundation) and Milestone 3 (Core Game Loop, feature `core-game-loop`) are both code-complete — all server-side/protocol/game-rules logic is verified end-to-end via real multi-client WebSocket smoke tests (throwaway scripts, not the browser), but nothing DOM/Three.js-facing (lobby UI, remote avatar rendering, role/task HUD, meeting UI, game-over screen) has run in an actual browser yet. Blocked only on a human 4+ browser-window playtest of the full game — see Todos below and `core-game-loop/tasks.md`'s T13 status note.
 
 ---
 
@@ -46,7 +46,7 @@
 
 ## Active Blockers
 
-None. (T9's manual playtest is tracked as an open Done-when item in tasks.md, not a blocker — the code path to unblock it is just "user plays it in a browser".)
+None. (The final 4+ browser-window playtest is tracked as an open Done-when item in `core-game-loop/tasks.md`'s T13, not a blocker — the code path to unblock it is just "user plays it in a browser", and this agent has no browser tooling this session to do it itself.)
 
 ---
 
@@ -86,6 +86,41 @@ None. (T9's manual playtest is tracked as an open Done-when item in tasks.md, no
 **Problem:** Neither had a guard. A double-click on "Host & Join" (there's no "connecting…" loading state yet) would have opened a second socket and sent a second `join`, leaving a phantom entry in everyone's roster forever. A duplicate `start` broadcast (a narrow race that widens with LAN latency) would have started a second `animate()` loop stacked on the first — doubling movement speed and mouse sensitivity, not just doubling CPU work.
 **Prevents:** Any handler wired to a UI click or an incoming network message that has non-idempotent side effects (opening a connection, starting a loop, attaching listeners) needs an explicit "already in progress/already done" guard — "the user won't do that" and "the message won't arrive twice" are both assumptions worth guarding against for free.
 
+### L-006: A win-condition formula needs to be checked against its own boundary inputs, not just typical ones (2026-08-01)
+
+**Context:** `server/gameState.js`'s `checkWinCondition` declares the Impostor the winner once living crew count ≤ living impostor count (1) — the standard Among Us parity rule. `server/index.js` originally allowed a match to start with as few as 2 connected players (1 impostor + 1 crewmate).
+**Problem:** With exactly 2 players, `checkWinCondition` returns `'impostor'` the instant the match is created — living crew (1) ≤ living impostors (1) — before either player has done anything. This was invisible to the unit tests (which happened to always test with 3+ players) and only surfaced via a real 2-player smoke test.
+**Solution:** Raised `MIN_PLAYERS_TO_START` to 3 (1 impostor + 2 crewmates, so parity isn't hit at kickoff) and added a regression test (`gameState.test.js`: "with only 2 players, checkWinCondition is impostor-favored from the start") documenting exactly why.
+**Prevents:** Any win/loss formula with a "count A vs. count B" shape needs its degenerate/boundary inputs (smallest possible roster, all-but-one-eliminated, etc.) checked explicitly — a formula that's obviously correct for a "normal" game size can be trivially true or false at the boundary.
+
+### L-007: Fixing a boundary bug doesn't mean the next-smallest case is safe too (2026-08-01)
+
+**Context:** After L-006 raised the minimum to 3 players, a follow-up real 4-player smoke test was run to verify the full kill→meeting→vote→eject path.
+**Problem:** Even with exactly 3 players (1 impostor + 2 crew), a single kill drops living crew to 1 — hitting the same parity condition from L-006 immediately, before any meeting can be called. The P2 acceptance path (kill, then call a meeting, then vote out the Impostor) is structurally unreachable with only 3 players; the match always ends by parity first.
+**Solution:** Corrected spec.md's P2 "Independent Test" to require 4+ clients explicitly, with an inline note explaining why 3 isn't enough. `MIN_PLAYERS_TO_START` itself stays at 3 (a 3-player game is still valid — it just can only end by parity, not by a meeting).
+**Prevents:** After fixing one boundary case, re-derive what the *next* boundary case actually allows rather than assuming "N+1 must be fine" — parity-style win conditions in particular tend to have more than one degenerate roster size.
+
+### L-008: A frozen player and a locked pointer are two different kinds of "can't act" — freezing movement doesn't unlock the mouse (2026-08-01)
+
+**Context:** `MEETING_STARTED` calls `player.setFrozen(true)` and shows `meetingUI`'s vote buttons as an HTML overlay, while pointer lock (acquired at game start for FPS-style mouselook) is still held by the canvas.
+**Problem:** Under the Pointer Lock API, all mouse events are still routed to the locked element, not whatever the OS cursor visually sits over — so a click on a vote button would never actually reach it, and the OS cursor stays hidden the whole time. A tester with no prior warning could only vote by independently guessing "press Esc first." Separately, a dead player's client kept calling `taskInteraction.update()` every frame and could still dispatch `kill`/`vent`/`callMeeting` on an interact press — the server silently drops these (correctly), but the local UI (e.g. `roleUI.markTaskDone`) would have already reacted as if it succeeded, showing a lie on that player's own screen. And the interact prompt showed a generic "Press E to interact" for every raycast hit regardless of role or task assignment (contradicting GAME-04/GAME-13's "no prompt for invalid interactions" requirement) and said "Press" for tasks that actually require a 2-second hold.
+**Solution:** `MEETING_STARTED`/`GAME_OVER` now call `document.exitPointerLock()` (the existing pointer-lock overlay's own "click to resume" flow handles regaining it, since browsers require a user gesture to re-lock). A `localAlive` flag (set false on the local player's own `PLAYER_DIED`/ejection) and an `interactionsPaused` flag (true during meetings/game-over) now gate both `handleInteractPress` and the per-frame `taskInteraction.update` call. `interactSystem.createInteractSystem` gained an optional `getPromptText(target)` callback so `main.js` can suppress the prompt entirely (unassigned/completed tasks, Crewmate looking at a vent or another player) and give each valid case the correct verb ("Hold" for tasks, "Press" for kill/vent/meeting).
+**Prevents:** When a UI state change is meant to disable player action ("frozen", "dead", "game over"), enumerate every distinct capture layer that could still let input through — physics freeze, pointer lock, per-frame update loops, and prompt/affordance text are four separate places the same "can't act right now" fact has to be applied, and missing any one of them either silently breaks the feature (unclickable vote buttons) or lets the client lie to its own player.
+
+### L-009: A "living players only" rule stated in prose needs to actually be enforced in the aggregate the win check reads (2026-08-01)
+
+**Context:** spec.md's GAME-05 says "WHEN every **living** Crewmate has completed all 3 of their assigned tasks..." — but `server/gameState.js`'s `tasksSummary` originally iterated `match.tasksByPlayer` unconditionally, including dead players.
+**Problem:** The server already rejects `taskComplete` from a dead player (via the `isAlive` gate in `server/index.js`), so a dead Crewmate's assigned-but-incomplete tasks stayed in `tasksSummary`'s `total` forever with no way to move to `completed`. After any death, `allDone` could never become true again — the entire task-completion win path (GAME-05, the P1 MVP criterion) was silently unreachable for the rest of the match. The existing smoke tests never caught this because the 4-player run that included a kill went straight to the meeting/voting path afterward, never circling back to re-test the task-win path with a death already on the board.
+**Solution:** `tasksSummary` now skips any `playerId` not in `match.alive`, so a dead Crewmate's tasks are excluded from both `total` and `completed` entirely rather than staying as permanent unfinished debt. Added a regression test and re-verified with a real 4-player smoke test: kill a crewmate mid-task, have the survivors finish their own lists, confirm `gameOver` still fires with `winner: 'crew'`.
+**Prevents:** When a spec sentence says "every living X", grep the implementation for the aggregate that decides the outcome (here, `tasksSummary`) and confirm it actually filters by the same aliveness check the rest of the code already enforces elsewhere — two code paths silently disagreeing on "does this dead player still count" is easy to miss because each one looks correct in isolation.
+
+### L-010: Extending a fixed-array component into a dynamic one is a signature change, not just a call-site change (2026-08-01)
+
+**Context:** Milestone 1's `interactSystem.js` and `remotePlayers.js` were both designed around Milestone 1/2's static scope: a fixed list of map interactables, and remote avatars that only needed to be drawn, not targeted.
+**Problem:** Milestone 3 needs the Impostor to raycast against other players (to kill) and the interact target list has to include meshes that come and go as players join/die mid-match — a snapshot array captured once at scene-build time can't reflect that.
+**Solution:** `createInteractSystem(camera, interactables)` became `createInteractSystem(camera, getInteractables)` (a callback re-read every frame instead of a fixed array); `remotePlayers.js` tags each avatar mesh with `userData = { interactable: true, kind: 'player', killTargetId: id }` and exposes `getMeshes()` so `main.js` can compose `[...staticInteractables, ...remotePlayers.getMeshes()]` fresh each frame. `playerController.js` also gained `teleportTo(position)` for vent movement, and design.md's separate "reportable body" prop at a kill site was dropped as a scope trim (the Cafeteria emergency button already gives every living player the same "call a meeting" capability design.md needed a body for) — documented inline in spec.md rather than silently dropped.
+**Prevents:** When a later milestone needs a component to react to a set that changes over the component's lifetime (not just at construction), a fixed-array/fixed-value constructor argument needs to become a callback/getter rather than being re-derived from scratch — treat this as a designed API change (with a SPEC_DEVIATION note) rather than a quiet patch.
+
 ---
 
 ## Quick Tasks Completed
@@ -102,9 +137,8 @@ None yet — captured in PROJECT.md "Explicitly out of scope" instead (multiple 
 
 ## Todos
 
-- [ ] Get user's manual two-browser-window playtest of `local-multiplayer` (T7's second Done-when box). Needs TWO processes: terminal 1 `npm run server` (logs the LAN address, default port 8080), terminal 2 a static file server from the project root (e.g. `python3 -m http.server 8843`) for the client. Window A: "Host & Join". Window B: type `localhost:8080` (same machine) or the LAN address terminal 1 printed (different machine) into the join field.
-- [ ] On playtest pass: mark T7 fully done in tasks.md, flip spec.md's NET-04..NET-13 statuses to Verified, update ROADMAP.md's Milestone 2 features to COMPLETE
-- [ ] Design phase for Milestone 3 (Core Game Loop: roles, tasks, impostor kill/vent, meetings/voting, win/loss) — the shared relay server and protocol from Milestone 2 should extend with new message types rather than needing a new transport layer
+- [ ] Get the user's manual 4+ browser-window playtest of the FULL game (both `local-multiplayer` and `core-game-loop` — all code across all 3 milestones is now complete, so this one playtest covers everything not yet exercised in a real browser). Needs TWO processes: terminal 1 `npm run server` (logs the LAN address, default port 8080), terminal 2 a static file server from the project root (e.g. `python3 -m http.server 8843`) for the client. Open 4+ browser windows/tabs pointed at the static server; only the first-connected window is host and sees the Start Game button; the others join via `localhost:8080` (same machine) or the LAN address terminal 1 printed. Check: role reveal is private, Crewmate task HUD + hold-to-complete tasks, all-tasks-done Crewmate win, Impostor kill, Cafeteria emergency button meeting, discussion→voting→ejection, ejecting the Impostor as a Crewmate win, parity as an Impostor win, a dead player staying invisible to the living, and Impostor-only vent teleport (Crewmates should see no vent prompt at all).
+- [ ] On playtest pass: check off the remaining Done-when boxes in `local-multiplayer/tasks.md` (T7) and `core-game-loop/tasks.md` (T13), flip both spec.md's remaining "Implementing (needs browser playtest)" statuses to Verified, and mark both ROADMAP.md milestones' overall status line as fully verified.
 
 ---
 

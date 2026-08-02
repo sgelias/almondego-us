@@ -1,7 +1,7 @@
 # Core Game Loop Tasks
 
 **Design**: `.specs/features/core-game-loop/design.md`
-**Status**: Draft
+**Status**: In Progress — T1-T13 code complete and gate-passed (all unit tests green, server-side rules/wiring verified via real multi-client smoke-test scripts); awaiting a human 4+ browser-window manual playtest. See T13's status note below.
 
 ---
 
@@ -57,9 +57,9 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] 5 unique task ids, each with a valid `roomId` and a label
-- [ ] Gate check passes: `node --test 'shared/**/*.test.js'`
-- [ ] Test count: at least 3 tests pass
+- [x] 5 unique task ids, each with a valid `roomId` and a label
+- [x] Gate check passes: `node --test 'shared/**/*.test.js'`
+- [x] Test count: at least 3 tests pass
 
 **Tests**: unit
 **Gate**: quick
@@ -81,11 +81,11 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] Every group has 2+ vents; every `roomId` is valid
-- [ ] `getVentDestination` cycles correctly for both a 2-vent and a 3-vent group
-- [ ] `getVentDestination('unknown')` returns `null`
-- [ ] Gate check passes: `node --test 'shared/**/*.test.js'`
-- [ ] Test count: at least 4 tests pass
+- [x] Every group has 2+ vents; every `roomId` is valid
+- [x] `getVentDestination` cycles correctly for both a 2-vent and a 3-vent group
+- [x] `getVentDestination('unknown')` returns `null`
+- [x] Gate check passes: `node --test 'shared/**/*.test.js'`
+- [x] Test count: at least 4 tests pass
 
 **Tests**: unit
 **Gate**: quick
@@ -107,9 +107,9 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] All 12 new types added, still unique across the full `MESSAGE_TYPE` object
-- [ ] Gate check passes: `node --test 'shared/**/*.test.js'`
-- [ ] Test count unchanged or higher, none removed
+- [x] All 12 new types added, still unique across the full `MESSAGE_TYPE` object
+- [x] Gate check passes: `node --test 'shared/**/*.test.js'`
+- [x] Test count unchanged or higher, none removed
 
 **Tests**: unit
 **Gate**: quick
@@ -131,12 +131,12 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] Role assignment is always exactly 1 impostor for any player count ≥ 3 (tested with a seeded/injectable `randomFn` for determinism, and a documented regression test for the 2-player degenerate case)
-- [ ] Task assignment gives each crewmate exactly 3 distinct ids from the 5-entry pool
-- [ ] Win-condition edge cases (all-tasks-done, parity, neither) all covered
-- [ ] Vote tally handles majority/tie/skip-majority correctly
-- [ ] Gate check passes: `node --test 'server/**/*.test.js'`
-- [ ] Test count: at least 10 tests pass
+- [x] Role assignment is always exactly 1 impostor for any player count ≥ 3 (tested with a seeded/injectable `randomFn` for determinism, and a documented regression test for the 2-player degenerate case)
+- [x] Task assignment gives each crewmate exactly 3 distinct ids from the 5-entry pool
+- [x] Win-condition edge cases (all-tasks-done, parity, neither) all covered
+- [x] Vote tally handles majority/tie/skip-majority correctly
+- [x] Gate check passes: `node --test 'server/**/*.test.js'`
+- [x] Test count: at least 10 tests pass (17 pass, including a regression test added after a real smoke test found that a dead crewmate's unfinished tasks were blocking the task-win path — see STATE.md L-009)
 
 **Tests**: unit
 **Gate**: quick
@@ -158,8 +158,8 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] `getTarget()` returns the same object the prompt is currently shown for, or `null` when nothing is targeted
-- [ ] Existing `update()` prompt behavior from Milestone 1 is unchanged
+- [x] `getTarget()` returns the same object the prompt is currently shown for, or `null` when nothing is targeted
+- [x] Existing `update()` prompt behavior from Milestone 1 is unchanged (extended, not replaced: `createInteractSystem` also now takes an optional `getPromptText(target)` callback so main.js can suppress/customize the prompt per role and task assignment — see SPEC_DEVIATION comment in the file and STATE.md L-008)
 
 **Tests**: none (per TESTING.md matrix)
 **Gate**: none
@@ -181,8 +181,8 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] `setFrozen(true)` stops the camera from moving even with keys held/mouse moved
-- [ ] `setFrozen(false)` resumes normal control immediately
+- [x] `setFrozen(true)` stops the camera from moving even with keys held/mouse moved
+- [x] `setFrozen(false)` resumes normal control immediately (also gained `teleportTo(position)` for vent movement, discovered as needed during T13 wiring)
 
 **Tests**: none (per TESTING.md matrix)
 **Gate**: none
@@ -204,9 +204,9 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] 5 task meshes and one mesh per vent location exist in the returned group, each correctly tagged
-- [ ] `interactables` includes all of them
-- [ ] The old single placeholder interactable is removed (superseded)
+- [x] 5 task meshes and one mesh per vent location exist in the returned group, each correctly tagged
+- [x] `interactables` includes all of them
+- [x] The old single placeholder interactable is removed (superseded)
 
 **Tests**: none (per TESTING.md matrix — Three.js-coupled, verified in T13's manual playtest)
 **Gate**: none
@@ -228,9 +228,9 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] `showRole` displays the correct role and (for Crewmate) task labels
-- [ ] `updateProgress` updates the visible counter without recreating the whole HUD
-- [ ] `hide()` removes everything
+- [x] `showRole` displays the correct role and (for Crewmate) task labels
+- [x] `updateProgress` updates the visible counter without recreating the whole HUD
+- [x] `hide()` removes everything (also gained `markTaskDone(taskId)`, a small SPEC_DEVIATION over design.md's signature)
 
 **Tests**: none (per TESTING.md matrix)
 **Gate**: none
@@ -252,9 +252,9 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] Holding the interact key on an assigned, incomplete task for ~2s fires `onComplete` exactly once
-- [ ] Releasing early resets progress (no partial credit on a second attempt)
-- [ ] Looking at an unassigned or already-completed task, or not being a Crewmate, never fires `onComplete`
+- [x] Holding the interact key on an assigned, incomplete task for ~2s fires `onComplete` exactly once
+- [x] Releasing early resets progress (no partial credit on a second attempt)
+- [x] Looking at an unassigned or already-completed task, or not being a Crewmate, never fires `onComplete` (main.js additionally gates this on the local player still being alive and no meeting/game-over being active — see STATE.md L-008)
 
 **Tests**: none (per TESTING.md matrix)
 **Gate**: none
@@ -276,9 +276,9 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] Discussion and voting phases render distinct content with a visible countdown
-- [ ] Clicking a player or Skip calls `onVote` exactly once, then disables further clicks
-- [ ] `showResult` clearly states the outcome, including the Impostor reveal when applicable
+- [x] Discussion and voting phases render distinct content with a visible countdown
+- [x] Clicking a player or Skip calls `onVote` exactly once, then disables further clicks
+- [x] `showResult` clearly states the outcome, including the Impostor reveal when applicable
 
 **Tests**: none (per TESTING.md matrix)
 **Gate**: none
@@ -300,8 +300,8 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] Displays the correct winner text for both outcomes
-- [ ] Always reveals the Impostor's name regardless of how the match ended
+- [x] Displays the correct winner text for both outcomes
+- [x] Always reveals the Impostor's name regardless of how the match ended
 
 **Tests**: none (per TESTING.md matrix)
 **Gate**: none
@@ -323,12 +323,14 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] A throwaway multi-client script (same approach as Milestone 2's T3 verification) confirms: role assignment (exactly one impostor, private), task completion + progress broadcast + win-by-tasks, kill + death broadcast, meeting call + voting + ejection + win-by-ejection, parity win, vent teleport (Impostor only), and Impostor-disconnect-ends-game
+- [x] A throwaway multi-client script (same approach as Milestone 2's T3 verification) confirms: role assignment (exactly one impostor, private), task completion + progress broadcast + win-by-tasks, kill + death broadcast, meeting call + voting + ejection + win-by-ejection, parity win, vent teleport (Impostor only), and Impostor-disconnect-ends-game
 
 **Tests**: none (per TESTING.md matrix — verified via a real multi-connection smoke script, same as Milestone 2's server task)
 **Gate**: none
 
 **Commit**: `feat(server): wire roles, tasks, kills, meetings, voting, and win conditions`
+
+**Status note (2026-08-01):** Two parity bugs were found and fixed via real 2- and 4-player smoke tests before this was considered done — see STATE.md L-006 (raised `MIN_PLAYERS_TO_START` from 2 to 3) and L-007 (even 3 players can't reach a meeting after one kill; spec.md's Independent Test now requires 4+ clients). A third bug (dead crewmates' unfinished tasks permanently blocking the task-win path) was found afterward via a targeted 4-player smoke test and fixed in `tasksSummary` — see STATE.md L-009.
 
 ---
 
@@ -345,14 +347,22 @@ T6, T7, T8, T9, T10, T11, T12 ──→ T13  (main.js full wiring + manual playt
 - Skill: NONE
 
 **Done when**:
-- [ ] `node --test` passes (all prior unit tests still green)
-- [ ] Manual playtest with 3+ browser windows: roles are assigned and private; the Crewmate(s) can complete tasks and see the shared progress counter; completing all tasks ends the match as a Crewmate win; separately, the Impostor can kill, a body/emergency button can be reported, a meeting runs discussion→voting→ejection, ejecting the Impostor ends the match as a Crewmate win, and reducing living Crewmates to parity ends it as an Impostor win; a dead player keeps moving locally but is invisible to the others; the Impostor can vent
+- [x] `node --test` passes (all prior unit tests still green — 38 total)
+- [ ] Manual playtest with 4+ browser windows: roles are assigned and private; the Crewmate(s) can complete tasks and see the shared progress counter; completing all tasks ends the match as a Crewmate win; separately, the Impostor can kill, the Cafeteria emergency button can call a meeting, a meeting runs discussion→voting→ejection, ejecting the Impostor ends the match as a Crewmate win, and reducing living Crewmates to parity ends it as an Impostor win; a dead player keeps moving locally but is invisible to the others; the Impostor can vent
 - [ ] All of spec.md's Success Criteria checked off
 
 **Tests**: none (bootstrap/integration — verified via full manual multi-client playtest)
-**Gate**: build — `node --test` + manual 3+-window playthrough per spec.md Success Criteria
+**Gate**: build — `node --test` + manual 4+-window playthrough per spec.md Success Criteria
 
 **Commit**: `feat(main): wire the full role/task/kill/meeting/voting/win-condition game loop`
+
+**Status note (2026-08-01):** Code complete; all server-side/protocol logic verified via real multi-client smoke-test scripts (never the browser — this session has no browser tooling). A self-review pass (prompted by the advisor tool, per project convention) caught four more bugs before handoff, none of which unit tests or `node --check` could catch since they're DOM/game-flow-integration issues:
+- A dead Crewmate's still-incomplete tasks stayed in `tasksSummary`'s denominator forever (the server independently rejects `taskComplete` from the dead via `isAlive`), permanently blocking the task-completion win path after any death. Fixed by excluding dead players from `tasksSummary` (STATE.md L-009); re-verified with a real 4-player smoke test (kill a crewmate mid-task, remaining crew finish theirs, confirm `gameOver: crew`).
+- `MEETING_STARTED` froze the player but never released the Pointer Lock API's mouse capture, so clicks could never reach `meetingUI`'s vote buttons. Fixed by calling `document.exitPointerLock()` on both `MEETING_STARTED` and `GAME_OVER` (STATE.md L-008).
+- A dead player's client kept running `taskInteraction.update` and could still send `kill`/`vent`/`callMeeting` client-side (the server would silently drop them, but the local UI would misleadingly show a task/kill as having "succeeded"). Fixed with a `localAlive` flag gating both (STATE.md L-008).
+- The interact prompt showed "Press E to interact" for every hit regardless of role/assignment, contradicting GAME-04/GAME-13's "no prompt" requirement, and said "Press" for tasks that actually need a 2s hold. Fixed by giving `interactSystem` an optional `getPromptText(target)` callback that main.js uses to suppress/customize the text per role and task-assignment state (STATE.md L-008).
+
+The manual playtest and Success Criteria boxes stay unchecked until a human confirms them in 4+ browser windows.
 
 ---
 
