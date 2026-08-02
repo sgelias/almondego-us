@@ -13,7 +13,8 @@ import { createNetClient, CONNECTED, CONNECTION_ERROR } from './net/client.js'
 import { createRemotePlayers } from './net/remotePlayers.js'
 import { colorForIndex } from './net/playerAvatar.js'
 import { createRoleUI } from './game/roleUI.js'
-import { createTaskInteraction } from './game/taskInteraction.js'
+import { createTaskQuiz, WRONG_ANSWER_LOCKOUT_MS } from './game/taskQuiz.js'
+import { drawTaskQuestion, drawResearchQuestion } from '../shared/questionBank.js'
 import { createMeetingUI } from './game/meetingUI.js'
 import { showGameOver } from './game/gameOverScreen.js'
 import { createVentTransition } from './ui/ventTransition.js'
@@ -93,7 +94,8 @@ function getPromptText(target) {
     if (localRole !== 'crewmate') return null
     if (!assignedTaskIds.has(target.userData.taskId)) return null
     if (completedTaskIds.has(target.userData.taskId)) return null
-    return 'Segure E para fazer a tarefa'
+    if (taskLockoutUntil.get(target.userData.taskId) > Date.now()) return 'Console reiniciando…'
+    return 'Pressione E para fazer a tarefa'
   }
   if (kind === 'vent') {
     return localRole === 'impostor' ? 'Pressione E para usar o duto' : null
@@ -132,12 +134,12 @@ let gameEnded = false
 let localPlayerId = null
 let localRole = null
 let localAlive = true
-// Suppresses task-hold interaction while a meeting is up or the game has
-// ended - the player may be frozen mid-task with E still held down, and
-// taskInteraction.update() runs every frame regardless of freeze state.
+// Suppresses task interaction while a meeting is up or the game has ended.
 let interactionsPaused = false
-let taskInteraction = null
-let interactKeyDown = false
+// taskId -> timestamp before which that console refuses to reopen, the cost
+// of a wrong answer (AD-008).
+const taskLockoutUntil = new Map()
+const taskQuiz = createTaskQuiz()
 
 const meetingUI = createMeetingUI({
   onVote(targetId) {
@@ -165,13 +167,46 @@ function showDeathNotice() {
   document.body.appendChild(notice)
 }
 
+// Opens the educational minigame for a task console. The player is frozen
+// and pointer lock is released while it is up - they are standing still at a
+// console, which is exactly when an Impostor can reach them, and the mouse
+// has to be free to click the answers (the same pointer-lock problem the
+// voting UI hit, see STATE.md L-008).
+function openTaskQuiz(taskId) {
+  if (localRole !== 'crewmate') return
+  if (!assignedTaskIds.has(taskId) || completedTaskIds.has(taskId)) return
+  if ((taskLockoutUntil.get(taskId) ?? 0) > Date.now()) return
+  if (taskQuiz.isOpen()) return
+
+  player.setFrozen(true)
+  document.exitPointerLock()
+
+  taskQuiz.show(drawTaskQuestion(Math.random), (result) => {
+    if (!gameEnded && !interactionsPaused) player.setFrozen(false)
+
+    if (result === 'correct') {
+      completedTaskIds.add(taskId)
+      sfx.taskDone()
+      roleUI.markTaskDone(taskId)
+      netClient.send(MESSAGE_TYPE.TASK_COMPLETE, { taskId })
+    } else if (result === 'wrong') {
+      // The cost of a wrong answer: this console is unusable for a few
+      // seconds and will ask a different question next time.
+      taskLockoutUntil.set(taskId, Date.now() + WRONG_ANSWER_LOCKOUT_MS)
+    }
+  })
+}
+
 function handleInteractPress() {
   if (!started || gameEnded || !netClient || !localAlive) return
+  if (interactionsPaused || taskQuiz.isOpen()) return
   const target = interactSystem.getTarget()
   if (!target) return
 
   const { kind } = target.userData
-  if (kind === 'vent' && localRole === 'impostor') {
+  if (kind === 'task') {
+    openTaskQuiz(target.userData.taskId)
+  } else if (kind === 'vent' && localRole === 'impostor') {
     netClient.send(MESSAGE_TYPE.VENT, { ventId: target.userData.ventId })
   } else if (kind === 'emergencyButton') {
     netClient.send(MESSAGE_TYPE.CALL_MEETING, {})
@@ -181,12 +216,12 @@ function handleInteractPress() {
 }
 
 document.addEventListener('keydown', (event) => {
+  if (event.code === 'Escape') {
+    taskQuiz.cancel()
+    return
+  }
   if (event.code !== 'KeyE') return
   if (!event.repeat) handleInteractPress()
-  interactKeyDown = true
-})
-document.addEventListener('keyup', (event) => {
-  if (event.code === 'KeyE') interactKeyDown = false
 })
 
 function connect(url, name, lobby) {
@@ -246,12 +281,7 @@ function connect(url, name, lobby) {
     const myColorIndex = roster.get(localPlayerId)?.colorIndex
     roleUI.showRole(msg.role, taskLabelsById, Number.isInteger(myColorIndex) ? colorForIndex(myColorIndex) : null)
 
-    taskInteraction = createTaskInteraction(interactSystem, msg.taskIds, (taskId) => {
-      completedTaskIds.add(taskId)
-      sfx.taskDone()
-      roleUI.markTaskDone(taskId)
-      netClient.send(MESSAGE_TYPE.TASK_COMPLETE, { taskId })
-    })
+    taskLockoutUntil.clear()
   })
 
   netClient.on(MESSAGE_TYPE.TASKS_PROGRESS, (msg) => {
@@ -272,6 +302,7 @@ function connect(url, name, lobby) {
   netClient.on(MESSAGE_TYPE.MEETING_STARTED, (msg) => {
     player.setFrozen(true)
     interactionsPaused = true
+    taskQuiz.cancel()
     // Pointer lock captures the mouse for camera look, so the vote buttons
     // below would never receive a click while locked - release it here; the
     // pointer-lock overlay's own "click to resume" flow handles regaining it
@@ -365,9 +396,6 @@ function startGame(lobby) {
       navGraph.canSee(camera.position.x, camera.position.z, position.x, position.z, VISION_RADIUS)
     )
     interactSystem.update()
-    if (taskInteraction && localAlive && !interactionsPaused) {
-      taskInteraction.update(deltaTime, interactKeyDown)
-    }
 
     stateSendAccumulator += deltaTime
     if (stateSendAccumulator >= STATE_SEND_INTERVAL) {
@@ -398,3 +426,6 @@ const lobby = showLobby({
     netClient.send(MESSAGE_TYPE.START, {})
   },
 })
+
+// A research challenge to work on while waiting for the match to fill.
+lobby.showResearchChallenge(drawResearchQuestion(Math.random))
