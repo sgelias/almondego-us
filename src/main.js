@@ -14,6 +14,8 @@ import { createRemotePlayers } from './net/remotePlayers.js'
 import { colorForIndex } from './net/playerAvatar.js'
 import { createRoleUI } from './game/roleUI.js'
 import { createHealthUI } from './game/healthUI.js'
+import { createSpellUI } from './game/spellUI.js'
+import { getSpellById } from '../shared/spellPool.js'
 import { createTaskQuiz, WRONG_ANSWER_LOCKOUT_MS } from './game/taskQuiz.js'
 import { drawTaskQuestion, drawResearchQuestion } from '../shared/questionBank.js'
 import { createMeetingUI } from './game/meetingUI.js'
@@ -141,6 +143,7 @@ const interactSystem = createInteractSystem(
 
 const roleUI = createRoleUI()
 const healthUI = createHealthUI()
+const spellUI = createSpellUI()
 const minimap = createMinimap(ROOM_LAYOUT, SKELD_CORRIDORS, { corridorWidth: CORRIDOR_WIDTH })
 minimap.mount()
 const ventTransition = createVentTransition()
@@ -161,6 +164,8 @@ let localPlayerId = null
 let localRole = null
 let localAlive = true
 let localMaxHealth = 3
+// Radar reveals every player on the map until this timestamp.
+let radarUntil = 0
 let isHost = false
 let deathNotice = null
 let gameOverScreen = null
@@ -248,6 +253,17 @@ function withColors(livingPlayers) {
   }))
 }
 
+function castSpell() {
+  if (!started || gameEnded || !netClient || !localAlive) return
+  if (interactionsPaused || taskQuiz.isOpen()) return
+  if (!spellUI.hasSpell() || spellUI.isSpent()) return
+  // The server is the authority on whether the charge is still there; the
+  // local check only avoids obviously pointless traffic.
+  netClient.send(MESSAGE_TYPE.CAST_SPELL, {
+    position: [camera.position.x, camera.position.y, camera.position.z],
+  })
+}
+
 function handleInteractPress() {
   if (!started || gameEnded || !netClient || !localAlive) return
   if (interactionsPaused || taskQuiz.isOpen()) return
@@ -267,6 +283,10 @@ function handleInteractPress() {
 }
 
 document.addEventListener('keydown', (event) => {
+  if (event.code === 'KeyQ' && !event.repeat) {
+    castSpell()
+    return
+  }
   if (event.code === 'Tab') {
     // Tab moves focus by default, which would pull it out of the canvas.
     event.preventDefault()
@@ -337,6 +357,8 @@ function connect(url, name, lobby) {
     localMaxHealth = msg.maxHealth ?? 3
     remotePlayers.resetHealth()
     healthUI.show(localMaxHealth, localMaxHealth)
+    spellUI.setSpell(msg.spellId)
+    radarUntil = 0
     assignedTaskIds.clear()
     for (const taskId of msg.taskIds) assignedTaskIds.add(taskId)
     completedTaskIds.clear()
@@ -353,6 +375,39 @@ function connect(url, name, lobby) {
 
   netClient.on(MESSAGE_TYPE.TASKS_PROGRESS, (msg) => {
     roleUI.updateProgress(msg.completed, msg.total)
+  })
+
+  netClient.on(MESSAGE_TYPE.SPELL_CAST, (msg) => {
+    const spell = getSpellById(msg.spellId)
+    if (!spell) return
+    const isMine = msg.playerId === localPlayerId
+    if (isMine) spellUI.markSpent()
+
+    if (spell.id === 'clarao') {
+      sfx.vent()
+      if (isMine) {
+        player.setSpeedMultiplier(1.9, spell.hasteSeconds)
+      } else if (
+        localAlive &&
+        msg.position &&
+        navGraph.canSee(camera.position.x, camera.position.z, msg.position[0], msg.position[2], VISION_RADIUS)
+      ) {
+        // Only people who could actually see the flash are blinded - the
+        // same line-of-sight rule the rest of the game uses.
+        spellUI.blindFor(spell.blindSeconds)
+        player.setSpeedMultiplier(0.35, spell.blindSeconds)
+      }
+      return
+    }
+
+    if (spell.id === 'radar' && isMine) {
+      radarUntil = Date.now() + spell.revealSeconds * 1000
+      minimap.reveal(spell.revealSeconds)
+      sfx.taskDone()
+      return
+    }
+
+    if (spell.id === 'embaralhar') sfx.meeting()
   })
 
   netClient.on(MESSAGE_TYPE.PLAYER_HURT, (msg) => {
@@ -471,6 +526,8 @@ function resetForNewMatch() {
   meetingTimers = []
 
   healthUI.hide()
+  spellUI.hide()
+  radarUntil = 0
   remotePlayers.resetHealth()
 
   assignedTaskIds.clear()
@@ -515,15 +572,18 @@ function startGame(lobby) {
     remotePlayers.update(deltaTime)
     // Visibility must be resolved before interactSystem raycasts, so a
     // player you cannot see is also not a valid kill target.
-    const visibleOthers = []
+    // Radar is the one sanctioned exception to limited vision, and it is
+    // scoped to the map only - the 3D avatars stay hidden either way.
+    const radarActive = Date.now() < radarUntil
+    const mapMarkers = []
     remotePlayers.applyVisibility((id, position) => {
       const seen = navGraph.canSee(camera.position.x, camera.position.z, position.x, position.z, VISION_RADIUS)
-      // The map is fed from this same pass rather than from the raw roster,
-      // so it can never reveal someone limited vision is hiding.
-      if (seen) visibleOthers.push({ x: position.x, z: position.z, colorIndex: roster.get(id)?.colorIndex })
+      if (seen || radarActive) {
+        mapMarkers.push({ x: position.x, z: position.z, colorIndex: roster.get(id)?.colorIndex, faded: !seen })
+      }
       return seen
     })
-    minimap.render(camera.position, roster.get(localPlayerId)?.colorIndex, visibleOthers)
+    minimap.render(camera.position, roster.get(localPlayerId)?.colorIndex, mapMarkers)
     interactSystem.update()
 
     stateSendAccumulator += deltaTime

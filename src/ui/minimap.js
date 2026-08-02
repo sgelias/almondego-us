@@ -133,7 +133,7 @@ export function createMinimap(roomLayout, corridors, { corridorWidth = 4 } = {})
     staticLayer.appendChild(label)
   }
 
-  function marker(x, z, color, isSelf) {
+  function marker(x, z, color, isSelf, faded = false) {
     const dot = document.createElementNS(svgNs, 'circle')
     dot.setAttribute('cx', toX(x))
     dot.setAttribute('cy', toY(z))
@@ -141,6 +141,9 @@ export function createMinimap(roomLayout, corridors, { corridorWidth = 4 } = {})
     dot.setAttribute('fill', color)
     dot.setAttribute('stroke', isSelf ? '#ffffff' : 'rgba(0,0,0,0.55)')
     dot.setAttribute('stroke-width', isSelf ? 0.9 : 0.5)
+    // Radar contacts are drawn dimmer than people you can actually see, so
+    // the map never implies you have eyes on someone you do not.
+    if (faded) dot.setAttribute('opacity', '0.55')
     return dot
   }
 
@@ -149,6 +152,17 @@ export function createMinimap(roomLayout, corridors, { corridorWidth = 4 } = {})
   return {
     isVisible() {
       return visible
+    },
+
+    // Radar force-opens the map for its duration - the reveal is useless if
+    // the player has to remember to press Tab.
+    reveal(seconds) {
+      visible = true
+      panel.style.display = 'flex'
+      setTimeout(() => {
+        visible = false
+        panel.style.display = 'none'
+      }, seconds * 1000)
     },
 
     toggle() {
@@ -168,7 +182,7 @@ export function createMinimap(roomLayout, corridors, { corridorWidth = 4 } = {})
       if (!visible) return
       markerLayer.innerHTML = ''
       for (const other of others) {
-        markerLayer.appendChild(marker(other.x, other.z, colorForIndex(other.colorIndex ?? 0), false))
+        markerLayer.appendChild(marker(other.x, other.z, colorForIndex(other.colorIndex ?? 0), false, other.faded))
       }
       markerLayer.appendChild(marker(selfPosition.x, selfPosition.z, colorForIndex(selfColorIndex ?? 0), true))
     },

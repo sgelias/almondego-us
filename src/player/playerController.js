@@ -30,6 +30,11 @@ export function createPlayerController(camera, worldOctree, spawnPoint, { onStep
   let pitch = 0
   let headBobTime = 0
   let frozen = false
+  // Temporary multiplier applied by spells (Clarão's haste, or the stumble
+  // of being blinded). Expires on its own so nothing has to remember to
+  // clear it.
+  let speedMultiplier = 1
+  let speedMultiplierUntil = 0
 
   function playerCollisions() {
     const result = worldOctree.capsuleIntersect(playerCollider)
@@ -57,7 +62,8 @@ export function createPlayerController(camera, worldOctree, spawnPoint, { onStep
     const { forward, right } = normalizeMovementVector(forwardInput, rightInput)
 
     const isSprinting = Boolean(keyStates['ShiftLeft'] || keyStates['ShiftRight'])
-    const acceleration = WALK_ACCELERATION * (isSprinting ? SPRINT_MULTIPLIER : 1)
+    const boost = Date.now() < speedMultiplierUntil ? speedMultiplier : 1
+    const acceleration = WALK_ACCELERATION * (isSprinting ? SPRINT_MULTIPLIER : 1) * boost
     const speedDelta = delta * acceleration * (playerOnFloor ? 1 : 0.5)
 
     if (forward !== 0) {
@@ -147,6 +153,11 @@ export function createPlayerController(camera, worldOctree, spawnPoint, { onStep
       playerCollider.start.set(position[0], position[1] - PLAYER_SEGMENT_HEIGHT, position[2])
       playerCollider.end.set(position[0], position[1], position[2])
       playerVelocity.set(0, 0, 0)
+    },
+
+    setSpeedMultiplier(value, seconds) {
+      speedMultiplier = value
+      speedMultiplierUntil = Date.now() + seconds * 1000
     },
 
     setFrozen(value) {

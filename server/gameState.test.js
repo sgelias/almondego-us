@@ -16,8 +16,12 @@ import {
   getHealth,
   getImpostorIds,
   MAX_HEALTH,
+  canUseSpell,
+  useSpell,
+  getSpell,
 } from './gameState.js'
 import { TASK_LOCATIONS } from '../shared/taskPool.js'
+import { SPELLS } from '../shared/spellPool.js'
 
 // Deterministic seeded PRNG so tests never flake, without relying on Math.random.
 function seededRandom(seed) {
@@ -316,4 +320,80 @@ test('getImpostorIds reports every impostor', () => {
   const reported = [...getImpostorIds(match)].sort()
   const expected = ids.filter((id) => getRole(match, id) === 'impostor').sort()
   assert.deepEqual(reported, expected)
+})
+
+// --- crewmate abilities (one random spell each, one cast per match) ---
+
+test('a crewmate may cast their spell exactly once per match', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const match = createMatch(ids, seededRandom(3))
+  const crew = ids.find((id) => getRole(match, id) === 'crewmate')
+
+  assert.equal(canUseSpell(match, crew), true)
+  assert.equal(useSpell(match, crew), true)
+  assert.equal(canUseSpell(match, crew), false)
+  assert.equal(useSpell(match, crew), false, 'the second use must be refused')
+})
+
+test('one crewmate casting does not spend anyone else\'s charge', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+  const match = createMatch(ids, seededRandom(8))
+  const crew = ids.filter((id) => getRole(match, id) === 'crewmate')
+  useSpell(match, crew[0])
+  for (const other of crew.slice(1)) {
+    assert.equal(canUseSpell(match, other), true, `${other} lost their charge`)
+  }
+})
+
+test('impostors get no spell', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const match = createMatch(ids, seededRandom(3))
+  const impostor = ids.find((id) => getRole(match, id) === 'impostor')
+  assert.equal(getSpell(match, impostor), null)
+  assert.equal(canUseSpell(match, impostor), false)
+  assert.equal(useSpell(match, impostor), false)
+})
+
+test('every crewmate is dealt exactly one real spell', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+  const match = createMatch(ids, seededRandom(17))
+  const known = new Set(SPELLS.map((s) => s.id))
+  for (const id of ids) {
+    if (getRole(match, id) === 'impostor') continue
+    const spell = getSpell(match, id)
+    assert.ok(known.has(spell), `${id} got "${spell}", which is not a spell`)
+  }
+})
+
+test('spells are dealt independently, not all the same', () => {
+  // Over many matches every spell should show up; if the deal were shared or
+  // fixed, only one id would ever appear.
+  const seen = new Set()
+  for (let seed = 1; seed <= 120; seed += 1) {
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+    const match = createMatch(ids, seededRandom(seed))
+    for (const id of ids) {
+      if (getRole(match, id) === 'crewmate') seen.add(getSpell(match, id))
+    }
+  }
+  assert.equal(seen.size, SPELLS.length, `only saw ${[...seen].join(', ')}`)
+})
+
+test('a dead crewmate cannot cast', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const match = createMatch(ids, seededRandom(3))
+  const crew = ids.find((id) => getRole(match, id) === 'crewmate')
+  recordDeath(match, crew)
+  assert.equal(canUseSpell(match, crew), false)
+  assert.equal(useSpell(match, crew), false)
+})
+
+test('a new match deals fresh spells and fresh charges', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const first = createMatch(ids, seededRandom(3))
+  const crew = ids.find((id) => getRole(first, id) === 'crewmate')
+  useSpell(first, crew)
+
+  const second = createMatch(ids, seededRandom(3))
+  assert.equal(canUseSpell(second, crew), true)
 })

@@ -112,6 +112,7 @@ const gameActions = createGameActions({
   sendToPlayer,
   hooks: {
     onAttack: (attackerId, victimId, died) => botRunner?.hooks.onAttack(attackerId, victimId, died),
+    onSpellCast: (playerId, spellId, position) => botRunner?.hooks.onSpellCast(playerId, spellId, position),
     onVent: (playerId) => botRunner?.hooks.onVent(playerId),
     onMeetingStarted: (info) => botRunner?.hooks.onMeetingStarted(info),
     onMeetingEnded: () => botRunner?.hooks.onMeetingEnded(),
@@ -128,6 +129,20 @@ botRunner = createBotRunner({
     broadcastToAll(MESSAGE_TYPE.STATE, { id, position, rotationY, seq })
   },
 })
+
+// Teleports every living player to a random room. Humans are told where to
+// go; bots are moved directly, because they have no client to obey a
+// teleport message.
+function shuffleEveryone() {
+  const rooms = ROOM_LAYOUT
+  for (const playerId of players.keys()) {
+    if (!gameActions.isAlive(playerId)) continue
+    const room = rooms[Math.floor(Math.random() * rooms.length)]
+    const position = [room.center[0], 1.35, room.center[2]]
+    if (botRunner.isBot(playerId)) botRunner.teleportBot(playerId, position)
+    else sendToPlayer(playerId, MESSAGE_TYPE.TELEPORT, { position })
+  }
+}
 
 function startMatch(socket, requestedImpostors) {
   if (socket.playerId !== hostId) return
@@ -227,6 +242,15 @@ wss.on('connection', (socket) => {
       case MESSAGE_TYPE.TASK_COMPLETE:
         gameActions.doTaskComplete(socket.playerId, message.taskId)
         return
+
+      case MESSAGE_TYPE.CAST_SPELL: {
+        const spellId = gameActions.doCastSpell(socket.playerId, message.position)
+        // "Embaralhar" is the one spell the server has to carry out itself:
+        // it moves every living player, and only the server knows where the
+        // bots are.
+        if (spellId === 'embaralhar') shuffleEveryone()
+        return
+      }
 
       case MESSAGE_TYPE.ATTACK:
         gameActions.doAttack(socket.playerId, message.targetId)

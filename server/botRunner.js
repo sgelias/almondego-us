@@ -3,6 +3,7 @@ import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
 import { SKELD_CORRIDORS } from '../shared/skeldCorridors.js'
 import { TASK_LOCATIONS } from '../shared/taskPool.js'
 import { VENT_LOCATIONS } from '../shared/ventPool.js'
+import { getSpellById } from '../shared/spellPool.js'
 import { createBotBrain } from './botBrain.js'
 import * as gameState from './gameState.js'
 
@@ -75,6 +76,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
         nextKillAllowedAt: 0,
         nextAttackAllowedAt: 0,
         nextVentAllowedAt: 0,
+        blindedUntil: 0,
         voteTimer: null,
       })
       created.push({ id, name })
@@ -298,13 +300,25 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
       if (!gameState.isAlive(match, bot.id)) continue
       try {
         const roomId = nav.roomIdAt(bot.position[0], bot.position[2])
-        bot.brain.noteNearbyPlayers(playersNear(bot.position, positions, bot.id), roomId, now)
+        // A blinded bot records nothing at all. This is what makes Clarão
+        // interesting rather than merely strong: casting it beside a murder
+        // wipes the witnesses' memory of it.
+        const blinded = now < bot.blindedUntil
+        if (!blinded) {
+          bot.brain.noteNearbyPlayers(playersNear(bot.position, positions, bot.id), roomId, now)
+        }
 
         // Repeat attempts are harmless: once one bot succeeds the phase is
         // no longer 'playing', so doCallMeeting rejects the rest, and
         // onMeetingEnded clears everyone's pending reports.
         if (bot.brain.shouldCallMeeting(now)) {
           gameActions.doCallMeeting(bot.id)
+          continue
+        }
+
+        if (blinded) {
+          // Stumble: no attacking, no pathing decisions while blind.
+          broadcastState(bot.id, [bot.position[0], EYE_HEIGHT, bot.position[2]], bot.rotationY, seq)
           continue
         }
 
@@ -341,6 +355,35 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
 
   // Any attack is worth witnessing, not just the fatal one - seeing someone
   // being beaten is exactly the evidence a bot should act on.
+  function teleportBot(botId, position) {
+    const bot = bots.get(botId)
+    if (!bot) return
+    bot.position = [position[0], EYE_HEIGHT, position[2]]
+    bot.path = null
+  }
+
+  // Blinds every bot that could see the caster - the same line-of-sight rule
+  // used everywhere else, so a bot behind a wall is unaffected.
+  function onSpellCast(playerId, spellId, position) {
+    if (spellId !== 'clarao' || !position) return
+    const spell = getSpellById('clarao')
+    const until = Date.now() + spell.blindSeconds * 1000
+    for (const bot of bots.values()) {
+      if (bot.id === playerId) continue
+      if (!nav.canSee(bot.position[0], bot.position[2], position[0], position[2], SENSE_RADIUS)) continue
+      bot.blindedUntil = until
+    }
+  }
+
+  // A crewmate bot spends its charge when it is one hit from death - the
+  // same moment a human would panic.
+  function considerBotSpell(bot, match) {
+    if (gameState.getRole(match, bot.id) !== 'crewmate') return
+    if (!gameState.canUseSpell(match, bot.id)) return
+    if (gameState.getHealth(match, bot.id) > 1) return
+    gameActions.doCastSpell(bot.id, [bot.position[0], EYE_HEIGHT, bot.position[2]])
+  }
+
   function onAttack(attackerId, victimId, died) {
     const now = Date.now()
     if (died) {
@@ -349,6 +392,10 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
       for (const bot of bots.values()) bot.brain.noteDeath(victimId, now)
     }
     fanOutSighting(attackerId, (bot, roomId) => bot.brain.noteWitnessedKill(attackerId, victimId, roomId, now))
+
+    const victim = bots.get(victimId)
+    const match = getMatch()
+    if (!died && victim && match) considerBotSpell(victim, match)
   }
 
   function onVent(playerId) {
@@ -430,6 +477,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     stop,
     isBot,
     setPaused,
-    hooks: { onAttack, onVent, onMeetingStarted, onMeetingEnded, onGameOver: () => stop() },
+    teleportBot,
+    hooks: { onAttack, onSpellCast, onVent, onMeetingStarted, onMeetingEnded, onGameOver: () => stop() },
   }
 }

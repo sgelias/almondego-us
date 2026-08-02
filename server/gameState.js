@@ -1,4 +1,5 @@
 import { TASK_LOCATIONS } from '../shared/taskPool.js'
+import { pickSpell } from '../shared/spellPool.js'
 
 const TASKS_PER_CREWMATE = 3
 
@@ -41,11 +42,15 @@ export function createMatch(playerIds, randomFn, { impostorCount = 1 } = {}) {
   const impostorIds = new Set(pickRandomSubset(playerIds, count, randomFn))
 
   const tasksByPlayer = new Map()
+  // One spell per crewmate, rolled independently - impostors get none, so
+  // casting is itself a claim of innocence.
+  const spellByPlayer = new Map()
   const taskIds = TASK_LOCATIONS.map((task) => task.id)
   for (const playerId of playerIds) {
     if (impostorIds.has(playerId)) continue
     const assigned = pickRandomSubset(taskIds, TASKS_PER_CREWMATE, randomFn)
     tasksByPlayer.set(playerId, assigned.map((taskId) => ({ taskId, done: false })))
+    spellByPlayer.set(playerId, pickSpell(randomFn))
   }
 
   return {
@@ -53,9 +58,29 @@ export function createMatch(playerIds, randomFn, { impostorCount = 1 } = {}) {
     alive: new Set(playerIds),
     health: new Map(playerIds.map((id) => [id, MAX_HEALTH])),
     tasksByPlayer,
+    spellByPlayer,
+    spellsSpent: new Set(),
     phase: 'playing',
     votes: new Map(),
   }
+}
+
+export function getSpell(match, playerId) {
+  return match.spellByPlayer.get(playerId) ?? null
+}
+
+export function canUseSpell(match, playerId) {
+  if (!match.alive.has(playerId)) return false
+  if (match.spellsSpent.has(playerId)) return false
+  return match.spellByPlayer.has(playerId)
+}
+
+// Returns false rather than throwing on a second attempt: the client can
+// always be a frame behind, and a refused cast is a normal outcome.
+export function useSpell(match, playerId) {
+  if (!canUseSpell(match, playerId)) return false
+  match.spellsSpent.add(playerId)
+  return true
 }
 
 export function getImpostorIds(match) {

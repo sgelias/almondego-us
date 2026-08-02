@@ -68,6 +68,7 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
         role: gameState.getRole(match, playerId),
         taskIds: gameState.getAssignedTasks(match, playerId),
         maxHealth: gameState.MAX_HEALTH,
+        spellId: gameState.getSpell(match, playerId),
         impostorCount: gameState.getImpostorIds(match).length,
       })
     }
@@ -163,6 +164,25 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
     return { destinationVentId, position }
   }
 
+  // Casting is broadcast to everyone: the effects are things other players
+  // must react to (being blinded, being teleported), and who cast it is
+  // deliberately public - a crewmate spending their charge is claiming
+  // innocence in front of witnesses.
+  //
+  // `position` comes from the caster, like every other position in this
+  // relay-model server (AD-002, LAN-trusted).
+  function doCastSpell(playerId, position) {
+    const match = getMatch()
+    if (!match || match.phase !== 'playing') return null
+    if (!playerId) return null
+    const spellId = gameState.getSpell(match, playerId)
+    if (!gameState.useSpell(match, playerId)) return null
+
+    broadcastToAll(MESSAGE_TYPE.SPELL_CAST, { playerId, spellId, position })
+    hooks.onSpellCast?.(playerId, spellId, position)
+    return spellId
+  }
+
   // The game-rules half of a disconnect; the caller still owns removing the
   // player from the roster/socket maps.
   function doPlayerLeft(playerId) {
@@ -196,6 +216,7 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
     startMatch,
     doTaskComplete,
     doAttack,
+    doCastSpell,
     doCallMeeting,
     doVote,
     doVent,

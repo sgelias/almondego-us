@@ -16,6 +16,8 @@ export const MESSAGE_TYPE = {
   VOTE: 'vote',
   VENT: 'vent',
   TASKS_PROGRESS: 'tasksProgress',
+  CAST_SPELL: 'castSpell',
+  SPELL_CAST: 'spellCast',
   PLAYER_HURT: 'playerHurt',
   PLAYER_DIED: 'playerDied',
   MEETING_STARTED: 'meetingStarted',
