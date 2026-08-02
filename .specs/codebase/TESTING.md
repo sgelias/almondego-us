@@ -54,6 +54,11 @@ Not used in this project. Rendering, collision-in-the-actual-scene, mouselook fe
 | Pointer lock overlay (`src/ui/pointerLockOverlay.js`) | none | — | manual playtest |
 | Interact system (`src/interaction/interactSystem.js`) | none | — | manual playtest |
 | Scene bootstrap (`src/main.js`) | none | — | manual playtest |
+| Message protocol (`shared/protocol.js`) | unit | `shared/protocol.test.js` | `node --test 'shared/**/*.test.js'` |
+| Relay server (`server/index.js`) | none | — | manual playtest (2+ browser clients) |
+| Net client (`src/net/client.js`) | none | — | manual playtest |
+| Remote players (`src/net/remotePlayers.js`) | none | — | manual playtest |
+| Lobby screen (`src/lobby/lobbyScreen.js`) | none | — | manual playtest |
 
 ## Parallelism Assessment
 
