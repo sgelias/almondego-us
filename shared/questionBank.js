@@ -303,6 +303,147 @@ export function createRouteRound(randomFn = Math.random) {
   return { ...picked, type: 'rota', title: 'Rota de navegação', instruction: 'Leia o relatório e escolha.' }
 }
 
+
+// --- upper deck (science deck) activities -----------------------------------
+//
+// Deliberately none of these is arithmetic dressed differently. The lower
+// deck already covers sums, ordering and reading comprehension; a whole new
+// floor that asked the same questions in new furniture would not be worth
+// the climb. Each of these trains something the deck below does not.
+
+// Observatório: reading a clock face. Whole and half hours only - "twenty
+// past" is a different, later skill and this is the first one.
+export function createClockRound(randomFn = Math.random) {
+  const hour = 1 + Math.floor(randomFn() * 12)
+  const half = randomFn() < 0.4
+  const minute = half ? 30 : 0
+  const label = (h, m) => `${h}:${String(m).padStart(2, '0')}`
+
+  const correct = label(hour, minute)
+  const options = new Set([correct])
+  while (options.size < 4) {
+    const otherHour = 1 + Math.floor(randomFn() * 12)
+    const otherMinute = randomFn() < 0.5 ? 0 : 30
+    options.add(label(otherHour, otherMinute))
+  }
+  const list = shuffled([...options], randomFn)
+  return {
+    type: 'relogio',
+    title: 'Observatório',
+    instruction: 'O relógio da nave parou de mostrar os números. Que horas ele marca?',
+    hour,
+    minute,
+    prompt: 'Que horas são?',
+    options: list,
+    answerIndex: list.indexOf(correct),
+  }
+}
+
+// Laboratório: balance the scales. The first taste of algebra - "what has to
+// go on this side so both weigh the same" is x + a = b without the letters.
+export function createBalanceRound(randomFn = Math.random) {
+  const left = 2 + Math.floor(randomFn() * 9)
+  const missing = 1 + Math.floor(randomFn() * 9)
+  const right = left + missing
+
+  const options = new Set([String(missing)])
+  while (options.size < 4) {
+    const decoy = 1 + Math.floor(randomFn() * 12)
+    options.add(String(decoy))
+  }
+  const list = shuffled([...options], randomFn)
+  return {
+    type: 'balanca',
+    title: 'Laboratório',
+    instruction: 'A balança precisa ficar equilibrada.',
+    left,
+    right,
+    prompt: `Quantos kg faltam do lado esquerdo para equilibrar com ${right} kg?`,
+    options: list,
+    answerIndex: list.indexOf(String(missing)),
+  }
+}
+
+// Estufa: fractions, shown as a watered row of planters rather than as a
+// notation the child has probably not met yet.
+export function createFractionRound(randomFn = Math.random) {
+  const total = [2, 3, 4, 5, 6, 8][Math.floor(randomFn() * 6)]
+  const watered = 1 + Math.floor(randomFn() * (total - 1))
+  const correct = `${watered}/${total}`
+
+  const options = new Set([correct])
+  while (options.size < 4) {
+    const d = [2, 3, 4, 5, 6, 8][Math.floor(randomFn() * 6)]
+    const n = 1 + Math.floor(randomFn() * d)
+    options.add(`${n}/${d}`)
+  }
+  const list = shuffled([...options], randomFn)
+  return {
+    type: 'fracoes',
+    title: 'Estufa',
+    instruction: 'Regue os canteiros e diga que parte da estufa já foi regada.',
+    total,
+    filled: watered,
+    prompt: 'Que fração dos canteiros está regada?',
+    options: list,
+    answerIndex: list.indexOf(correct),
+  }
+}
+
+// Arquivo: alphabetical order. Pure literacy, and it reuses the reactor's
+// tap-in-order interaction, which already handles strings.
+const ARCHIVE_WORDS = [
+  ['astro', 'buraco', 'cometa', 'disco', 'estrela'],
+  ['bota', 'capacete', 'luva', 'mochila', 'traje'],
+  ['água', 'bomba', 'cabo', 'motor', 'painel'],
+  ['galáxia', 'lua', 'nuvem', 'planeta', 'sol'],
+  ['alga', 'broto', 'caule', 'folha', 'raiz'],
+]
+
+export function createAlphabetRound(randomFn = Math.random) {
+  const source = ARCHIVE_WORDS[Math.floor(randomFn() * ARCHIVE_WORDS.length)]
+  const picked = shuffled(source, randomFn).slice(0, 4)
+  // localeCompare so accented words sort the way a Portuguese-speaking child
+  // is taught, not by code point.
+  const solution = [...picked].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  return {
+    type: 'ordem',
+    title: 'Arquivo',
+    instruction: 'Arquive as fichas em ordem alfabética, da primeira para a última.',
+    values: picked,
+    solution,
+  }
+}
+
+// Torre de Rádio: complete the pattern. Sequences are reasoning rather than
+// calculation - the child has to notice the rule before applying it.
+export function createSequenceRound(randomFn = Math.random) {
+  const start = 1 + Math.floor(randomFn() * 6)
+  const stepSize = [2, 3, 4, 5, 10][Math.floor(randomFn() * 5)]
+  const descending = randomFn() < 0.3
+  const first = descending ? start + stepSize * 5 : start
+
+  const shown = []
+  for (let i = 0; i < 4; i += 1) shown.push(first + (descending ? -1 : 1) * stepSize * i)
+  const answer = first + (descending ? -1 : 1) * stepSize * 4
+
+  const options = new Set([String(answer)])
+  while (options.size < 4) {
+    const decoy = answer + (Math.floor(randomFn() * 7) - 3)
+    if (decoy >= 0) options.add(String(decoy))
+  }
+  const list = shuffled([...options], randomFn)
+  return {
+    type: 'sequencia',
+    title: 'Torre de Rádio',
+    instruction: 'O sinal chega em um padrão. Descubra qual número vem depois.',
+    sequence: shown,
+    prompt: `${shown.join(', ')}, ...?`,
+    options: list,
+    answerIndex: list.indexOf(String(answer)),
+  }
+}
+
 // Which activity a room runs. Rooms without an entry fall back to the plain
 // question modal, so adding a room never breaks tasks.
 const ACTIVITY_BY_ROOM = {
@@ -311,6 +452,13 @@ const ACTIVITY_BY_ROOM = {
   admin: createTableRound,
   weapons: createAsteroidRound,
   navigation: createRouteRound,
+
+  // Upper deck.
+  observatory: createClockRound,
+  laboratory: createBalanceRound,
+  hydroponics: createFractionRound,
+  archive: createAlphabetRound,
+  radioTower: createSequenceRound,
 }
 
 export function drawActivityForRoom(roomId, randomFn = Math.random) {

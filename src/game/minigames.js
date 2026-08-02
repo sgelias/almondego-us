@@ -256,6 +256,175 @@ const BUILDERS = {
     })
   },
 
+  // Observatório: an actual clock face. A multiple choice listing times with
+  // no clock to read would be a memory question, not a clock-reading one.
+  relogio(root, activity, finish) {
+    buildChoice(root, activity, finish, {
+      extraTop(container) {
+        const size = 150
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+        svg.setAttribute('viewBox', `0 0 ${size} ${size}`)
+        svg.setAttribute('width', String(size))
+        svg.setAttribute('height', String(size))
+
+        const circle = document.createElementNS(svg.namespaceURI, 'circle')
+        circle.setAttribute('cx', String(size / 2))
+        circle.setAttribute('cy', String(size / 2))
+        circle.setAttribute('r', String(size / 2 - 6))
+        circle.setAttribute('fill', 'rgba(255,255,255,0.08)')
+        circle.setAttribute('stroke', COLORS.accent)
+        circle.setAttribute('stroke-width', '3')
+        svg.appendChild(circle)
+
+        // Hour ticks, and the numbers at 12/3/6/9 as anchors.
+        for (let i = 0; i < 12; i += 1) {
+          const angle = (i / 12) * Math.PI * 2 - Math.PI / 2
+          const inner = i % 3 === 0 ? size / 2 - 20 : size / 2 - 14
+          const tick = document.createElementNS(svg.namespaceURI, 'line')
+          tick.setAttribute('x1', String(size / 2 + Math.cos(angle) * inner))
+          tick.setAttribute('y1', String(size / 2 + Math.sin(angle) * inner))
+          tick.setAttribute('x2', String(size / 2 + Math.cos(angle) * (size / 2 - 9)))
+          tick.setAttribute('y2', String(size / 2 + Math.sin(angle) * (size / 2 - 9)))
+          tick.setAttribute('stroke', COLORS.muted)
+          tick.setAttribute('stroke-width', i % 3 === 0 ? '3' : '1.5')
+          svg.appendChild(tick)
+        }
+
+        const hand = (fraction, length, width, colour) => {
+          const angle = fraction * Math.PI * 2 - Math.PI / 2
+          const line = document.createElementNS(svg.namespaceURI, 'line')
+          line.setAttribute('x1', String(size / 2))
+          line.setAttribute('y1', String(size / 2))
+          line.setAttribute('x2', String(size / 2 + Math.cos(angle) * length))
+          line.setAttribute('y2', String(size / 2 + Math.sin(angle) * length))
+          line.setAttribute('stroke', colour)
+          line.setAttribute('stroke-width', String(width))
+          line.setAttribute('stroke-linecap', 'round')
+          svg.appendChild(line)
+        }
+        // The hour hand moves with the minutes, or half past would read as
+        // exactly on the hour and the puzzle would lie.
+        hand(((activity.hour % 12) + activity.minute / 60) / 12, size / 2 - 46, 6, COLORS.ink)
+        hand(activity.minute / 60, size / 2 - 26, 4, COLORS.accent)
+
+        svg.style.margin = '0.2rem 0 0.4rem'
+        container.appendChild(svg)
+      },
+    })
+  },
+
+  // Laboratório: the two pans, drawn. Seeing one side heavier is the whole
+  // intuition being taught.
+  balanca(root, activity, finish) {
+    buildChoice(root, activity, finish, {
+      extraTop(container) {
+        const scales = document.createElement('div')
+        scales.style.display = 'flex'
+        scales.style.alignItems = 'flex-end'
+        scales.style.justifyContent = 'center'
+        scales.style.gap = '1.2rem'
+        scales.style.margin = '0.3rem 0 0.5rem'
+
+        const pan = (weight, label, tilt) => {
+          const column = document.createElement('div')
+          column.style.display = 'flex'
+          column.style.flexDirection = 'column'
+          column.style.alignItems = 'center'
+          column.style.transform = `translateY(${tilt}px)`
+
+          const dish = document.createElement('div')
+          dish.textContent = label
+          dish.style.minWidth = '5.5rem'
+          dish.style.padding = '0.8rem 0.6rem'
+          dish.style.textAlign = 'center'
+          dish.style.fontSize = '1.3rem'
+          dish.style.fontWeight = '800'
+          dish.style.borderRadius = '0 0 12px 12px'
+          dish.style.border = `2px solid ${COLORS.controlBorder}`
+          dish.style.borderTop = 'none'
+          dish.style.background = 'rgba(255,255,255,0.08)'
+          column.appendChild(dish)
+          return column
+        }
+
+        // The lighter side sits higher, the way a real balance would.
+        scales.appendChild(pan(activity.left, `${activity.left} kg + ?`, activity.left < activity.right ? -14 : 8))
+        const pivot = document.createElement('div')
+        pivot.textContent = '⚖'
+        pivot.style.fontSize = '2rem'
+        scales.appendChild(pivot)
+        scales.appendChild(pan(activity.right, `${activity.right} kg`, activity.left < activity.right ? 8 : -14))
+
+        container.appendChild(scales)
+      },
+    })
+  },
+
+  // Estufa: the planters, so the fraction is something seen before it is
+  // something written.
+  fracoes(root, activity, finish) {
+    buildChoice(root, activity, finish, {
+      extraTop(container) {
+        const row = document.createElement('div')
+        row.style.display = 'flex'
+        row.style.gap = '0.3rem'
+        row.style.margin = '0.3rem 0 0.5rem'
+        for (let i = 0; i < activity.total; i += 1) {
+          const cell = document.createElement('div')
+          const watered = i < activity.filled
+          cell.textContent = watered ? '🌱' : ''
+          cell.style.width = '2.6rem'
+          cell.style.height = '2.6rem'
+          cell.style.display = 'flex'
+          cell.style.alignItems = 'center'
+          cell.style.justifyContent = 'center'
+          cell.style.fontSize = '1.4rem'
+          cell.style.borderRadius = '6px'
+          cell.style.border = `2px solid ${watered ? COLORS.good : COLORS.controlBorder}`
+          cell.style.background = watered ? 'rgba(61,220,132,0.18)' : 'rgba(255,255,255,0.05)'
+          row.appendChild(cell)
+        }
+        container.appendChild(row)
+      },
+    })
+  },
+
+  // Torre de Rádio: the sequence as pulses, with the gap the child fills.
+  sequencia(root, activity, finish) {
+    buildChoice(root, activity, finish, {
+      extraTop(container) {
+        const row = document.createElement('div')
+        row.style.display = 'flex'
+        row.style.alignItems = 'center'
+        row.style.gap = '0.5rem'
+        row.style.margin = '0.3rem 0 0.5rem'
+        for (const value of activity.sequence) {
+          const pulse = document.createElement('div')
+          pulse.textContent = String(value)
+          pulse.style.minWidth = '3rem'
+          pulse.style.padding = '0.5rem 0.4rem'
+          pulse.style.textAlign = 'center'
+          pulse.style.fontWeight = '700'
+          pulse.style.borderRadius = '8px'
+          pulse.style.border = `2px solid ${COLORS.controlBorder}`
+          pulse.style.background = 'rgba(255,255,255,0.06)'
+          row.appendChild(pulse)
+        }
+        const gap = document.createElement('div')
+        gap.textContent = '?'
+        gap.style.minWidth = '3rem'
+        gap.style.padding = '0.5rem 0.4rem'
+        gap.style.textAlign = 'center'
+        gap.style.fontWeight = '800'
+        gap.style.borderRadius = '8px'
+        gap.style.border = `2px dashed ${COLORS.accent}`
+        gap.style.color = COLORS.accent
+        row.appendChild(gap)
+        container.appendChild(row)
+      },
+    })
+  },
+
   // Navegação: the reading passage, framed as picking a route.
   rota(root, activity, finish) {
     buildChoice(root, activity, finish, {

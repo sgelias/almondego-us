@@ -20,6 +20,7 @@ import { createCarryUI } from './game/carryUI.js'
 import { createEventUI } from './game/eventUI.js'
 import { getEventById, panelPosition } from '../shared/eventPool.js'
 import { ROOM_LABELS } from './ui/minimap.js'
+import { DECKS, deckAtY, DECK_LABELS } from '../shared/decks.js'
 import { getSpellById } from '../shared/spellPool.js'
 import { createTaskQuiz, WRONG_ANSWER_LOCKOUT_MS } from './game/taskQuiz.js'
 import { drawActivityForRoom, drawResearchQuestion } from '../shared/questionBank.js'
@@ -180,7 +181,57 @@ const spellUI = createSpellUI()
 const taskGuide = createTaskGuide(scene, camera)
 const carryUI = createCarryUI()
 const eventUI = createEventUI()
-const minimap = createMinimap(ROOM_LAYOUT, SKELD_CORRIDORS, { corridorWidth: CORRIDOR_WIDTH })
+// One map per deck, and only the one you are standing on is drawn. Two
+// decks on a single top-down map would overlap - the ship is stacked, so
+// half the rooms would be printed on top of each other.
+const minimapByDeck = DECKS.map((deck) =>
+  createMinimap(
+    ROOM_LAYOUT.filter((room) => (room.deck ?? 0) === deck),
+    SKELD_CORRIDORS.filter((corridor) => (corridor.deck ?? 0) === deck),
+    { corridorWidth: CORRIDOR_WIDTH, caption: DECK_LABELS[deck] }
+  )
+)
+
+// A facade so the rest of main.js goes on talking to "the minimap". Fanning
+// state out to both means walking upstairs never shows a map that has
+// forgotten which tasks you have done.
+const minimap = {
+  mount() {
+    for (const map of minimapByDeck) map.mount()
+  },
+  setTasks(tasks) {
+    for (const map of minimapByDeck) map.setTasks(tasks)
+  },
+  reveal(...args) {
+    for (const map of minimapByDeck) map.reveal(...args)
+  },
+  hide() {
+    open = false
+    for (const map of minimapByDeck) map.hide()
+  },
+  toggle() {
+    open = !open
+    for (const map of minimapByDeck) map.hide()
+    if (open) minimapByDeck[shownDeck].toggle()
+    return open
+  },
+  render(selfPosition, selfColorIndex, markers) {
+    if (!open) return
+    const deck = deckAtY(selfPosition.y)
+    if (deck !== shownDeck) {
+      // Walked up or down with the map open: swap which one is on screen.
+      minimapByDeck[shownDeck].hide()
+      shownDeck = deck
+      minimapByDeck[shownDeck].toggle()
+    }
+    // Only the people on your own floor. Someone directly below you is not
+    // a dot two metres away, they are behind a floor.
+    const sameDeck = markers.filter((marker) => deckAtY(marker.y ?? 0) === deck)
+    minimapByDeck[deck].render(selfPosition, selfColorIndex, sameDeck)
+  },
+}
+let open = false
+let shownDeck = 0
 minimap.mount()
 const ventTransition = createVentTransition()
 const toast = createToast()
@@ -795,7 +846,7 @@ function startGame(lobby) {
         currentVisionRadius()
       )
       if (seen || radarActive) {
-        mapMarkers.push({ x: position.x, z: position.z, colorIndex: roster.get(id)?.colorIndex, faded: !seen })
+        mapMarkers.push({ x: position.x, y: position.y, z: position.z, colorIndex: roster.get(id)?.colorIndex, faded: !seen })
       }
       return seen
     })

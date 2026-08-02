@@ -25,7 +25,7 @@ que serviu a página, e quem entrar primeiro vira o anfitrião — é quem vê o
 botão **Iniciar Partida**.
 
 ```bash
-npm test     # 168 testes
+npm test     # 182 testes
 npm run server  # só o servidor de partida
 npm run web     # só o servidor do cliente
 ```
@@ -39,7 +39,7 @@ npm run web     # só o servidor do cliente
 | `Shift` | Correr |
 | `E` | Interagir: tarefa, duto, botão de emergência, atacar |
 | `Q` | Usar sua magia (tripulantes) |
-| `Tab` | Abrir o mapa |
+| `Tab` | Abrir o mapa (do deck em que você está) |
 | `Esc` | Sair de uma tarefa / pausar |
 | `M` | Silenciar a música |
 | `−` `+` | Abaixar / aumentar a música |
@@ -60,8 +60,25 @@ própria atividade, e todas são educativas:
 | Reator | Tocar os números do menor para o maior |
 | Admin | Consultar a tabela e responder |
 
+**O deck superior.** Duas escadas — uma a vante, outra a ré — levam a um
+segundo andar com cinco salas e objetivos próprios:
+
+| Sala | Atividade |
+| --- | --- |
+| Observatório | Ler as horas num relógio de ponteiros |
+| Laboratório | Equilibrar a balança |
+| Estufa | Dizer que fração dos canteiros foi regada |
+| Arquivo | Arquivar fichas em ordem alfabética |
+| Torre de Rádio | Descobrir o número que continua o padrão |
+
+Subir leva uns cinco segundos, num poço com uma saída só — quem te viu ir
+para a escada sabe onde você está. Você não enxerga entre andares, e o mapa
+mostra só o deck em que você está.
+
 Duas tarefas atravessam a nave: buscar o fusível no Depósito para instalar na
-Elétrica, e coletar a amostra na Enfermaria para analisar no Reator. Setas
+Elétrica, e coletar a amostra na Enfermaria para analisar no Reator. Outras duas
+atravessam os andares: a amostra da Enfermaria vai para o Laboratório, e a
+antena do Depósito sobe até a Torre de Rádio. Setas
 flutuantes, visíveis através das paredes, mostram onde é a sua próxima etapa.
 
 Errar tranca aquele console por alguns segundos e sorteia outro exercício. No

@@ -29,6 +29,17 @@ export const ROOM_LABELS = {
   reactor: 'Reator',
   medbay: 'Enfermaria',
   admin: 'Admin',
+
+  // Stairwells and the science deck above.
+  stairFore: 'Escada de Vante',
+  stairAft: 'Escada de Ré',
+  stairForeTop: 'Escada de Vante',
+  stairAftTop: 'Escada de Ré',
+  observatory: 'Observatório',
+  laboratory: 'Laboratório',
+  hydroponics: 'Estufa',
+  archive: 'Arquivo',
+  radioTower: 'Torre de Rádio',
 }
 
 function computeBounds(roomLayout) {
@@ -45,7 +56,7 @@ function computeBounds(roomLayout) {
   return { xMin: xMin - PADDING, xMax: xMax + PADDING, zMin: zMin - PADDING, zMax: zMax + PADDING }
 }
 
-export function createMinimap(roomLayout, corridors, { corridorWidth = 4 } = {}) {
+export function createMinimap(roomLayout, corridors, { corridorWidth = 4, caption = null } = {}) {
   const bounds = computeBounds(roomLayout)
   const worldWidth = bounds.xMax - bounds.xMin
   const worldDepth = bounds.zMax - bounds.zMin
@@ -66,6 +77,19 @@ export function createMinimap(roomLayout, corridors, { corridorWidth = 4 } = {})
   frame.style.borderRadius = '14px'
   frame.style.padding = '1rem'
   frame.style.boxShadow = '0 18px 50px rgba(0,0,0,0.5)'
+  if (caption) {
+    // Which floor you are looking at. Without it the two maps are just two
+    // unfamiliar diagrams that swap under you when you climb.
+    const title = document.createElement('div')
+    title.textContent = caption
+    title.style.color = '#8fd3ff'
+    title.style.textTransform = 'uppercase'
+    title.style.letterSpacing = '0.1em'
+    title.style.fontSize = '0.72rem'
+    title.style.textAlign = 'center'
+    title.style.marginBottom = '0.35rem'
+    panel.appendChild(title)
+  }
   panel.appendChild(frame)
 
   const heading = document.createElement('div')

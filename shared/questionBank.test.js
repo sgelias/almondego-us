@@ -12,6 +12,11 @@ import {
   createTableRound,
   createAsteroidRound,
   drawActivityForRoom,
+  createClockRound,
+  createBalanceRound,
+  createFractionRound,
+  createAlphabetRound,
+  createSequenceRound,
 } from './questionBank.js'
 
 function seededRandom(seed) {
@@ -192,4 +197,88 @@ test('every room with an activity produces one, and unknown rooms still get a qu
   // A room with no bespoke activity must still be playable.
   const fallback = drawActivityForRoom('storage', seededRandom(7))
   assert.ok(fallback.options?.length >= 2, 'the fallback is not answerable')
+})
+
+// --- science deck activities ---
+//
+// Each of these checks the answer against what the puzzle actually shows,
+// rather than trusting the generator that produced both.
+
+test('the clock round marks the time its own hands point at', () => {
+  for (let seed = 1; seed <= 300; seed += 1) {
+    const round = createClockRound(seededRandom(seed))
+    assert.ok(round.hour >= 1 && round.hour <= 12, `hour ${round.hour} is not on a clock face`)
+    assert.ok([0, 30].includes(round.minute), `minute ${round.minute} is not a whole or half hour`)
+    assert.equal(round.options.length, 4)
+    assert.equal(new Set(round.options).size, 4, 'two options show the same time')
+    assert.equal(
+      round.options[round.answerIndex],
+      `${round.hour}:${String(round.minute).padStart(2, '0')}`,
+      'the marked answer is not the time on the clock'
+    )
+  }
+})
+
+test('the balance round is solvable and the two pans really differ', () => {
+  for (let seed = 1; seed <= 300; seed += 1) {
+    const round = createBalanceRound(seededRandom(seed))
+    const answer = Number(round.options[round.answerIndex])
+    assert.equal(round.left + answer, round.right, `${round.left} + ${answer} does not balance ${round.right}`)
+    assert.ok(answer > 0, 'the scales already balance, so there is nothing to work out')
+    assert.equal(new Set(round.options).size, 4)
+  }
+})
+
+test('the fraction round matches the planters it draws', () => {
+  for (let seed = 1; seed <= 300; seed += 1) {
+    const round = createFractionRound(seededRandom(seed))
+    assert.equal(round.options[round.answerIndex], `${round.filled}/${round.total}`)
+    assert.ok(round.filled >= 1 && round.filled < round.total, 'a fraction of none or all teaches nothing here')
+    assert.equal(new Set(round.options).size, 4)
+  }
+})
+
+test('the archive round asks for a real alphabetical ordering', () => {
+  let everShuffled = false
+  for (let seed = 1; seed <= 300; seed += 1) {
+    const round = createAlphabetRound(seededRandom(seed))
+    assert.equal(round.type, 'ordem', 'the archive should reuse the tap-in-order interaction')
+    assert.equal(round.values.length, round.solution.length)
+    assert.deepEqual([...round.values].sort(), [...round.solution].sort(), 'the solution is not the same set of words')
+    const sorted = [...round.solution].every(
+      (word, i) => i === 0 || round.solution[i - 1].localeCompare(word, 'pt-BR') <= 0
+    )
+    assert.ok(sorted, `not in alphabetical order: ${round.solution.join(', ')}`)
+    if (round.values.join() !== round.solution.join()) everShuffled = true
+  }
+  assert.ok(everShuffled, 'the fichas are always handed over already sorted')
+})
+
+test('the sequence round continues its own pattern', () => {
+  for (let seed = 1; seed <= 300; seed += 1) {
+    const round = createSequenceRound(seededRandom(seed))
+    assert.equal(round.sequence.length, 4)
+    const step = round.sequence[1] - round.sequence[0]
+    for (let i = 2; i < round.sequence.length; i += 1) {
+      assert.equal(round.sequence[i] - round.sequence[i - 1], step, 'the shown sequence is not a single pattern')
+    }
+    assert.equal(
+      Number(round.options[round.answerIndex]),
+      round.sequence[3] + step,
+      'the marked answer does not continue the pattern'
+    )
+    assert.equal(new Set(round.options).size, 4)
+    for (const option of round.options) assert.ok(Number(option) >= 0, 'a negative option, for this age group')
+  }
+})
+
+test('every upper-deck room has its own activity, and no two share one', () => {
+  const rooms = ['observatory', 'laboratory', 'hydroponics', 'archive', 'radioTower']
+  const types = new Set()
+  for (const roomId of rooms) {
+    const activity = drawActivityForRoom(roomId, seededRandom(11))
+    assert.ok(activity.type, `${roomId} produced an activity with no type`)
+    types.add(activity.type)
+  }
+  assert.equal(types.size, rooms.length, `upper-deck rooms share an activity type: ${[...types]}`)
 })

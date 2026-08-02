@@ -50,6 +50,59 @@ export const TASK_LOCATIONS = [
       { roomId: 'reactor', offset: [0, 0, 3], verb: 'analisar a amostra' },
     ],
   },
+
+  // --- science deck (upper) ---
+  //
+  // Reaching any of these means finding a staircase and climbing it, which
+  // is a real commitment: about five seconds each way, in a stairwell with
+  // one way out. That is the point of putting objectives up here rather than
+  // just rooms.
+  {
+    id: 'clock-observatory',
+    label: 'Acertar o relógio da nave (Observatório)',
+    steps: [{ roomId: 'observatory', offset: [2, 0, -2], verb: 'ler o relógio' }],
+  },
+  {
+    id: 'balance-laboratory',
+    label: 'Equilibrar a balança (Laboratório)',
+    steps: [{ roomId: 'laboratory', offset: [-2, 0, 2], verb: 'equilibrar a balança' }],
+  },
+  {
+    id: 'water-hydroponics',
+    label: 'Regar os canteiros (Estufa)',
+    steps: [{ roomId: 'hydroponics', offset: [1.5, 0, 1.5], verb: 'regar os canteiros' }],
+  },
+  {
+    id: 'file-archive',
+    label: 'Arquivar as fichas (Arquivo)',
+    steps: [{ roomId: 'archive', offset: [0, 0, 2], verb: 'arquivar as fichas' }],
+  },
+  {
+    id: 'signal-radioTower',
+    label: 'Decifrar o sinal (Torre de Rádio)',
+    steps: [{ roomId: 'radioTower', offset: [-1.5, 0, 0], verb: 'decifrar o sinal' }],
+  },
+
+  // Two tasks that cross between decks. The existing fetch tasks make you
+  // walk the ship; these make you climb it, which is a much bigger
+  // commitment - you are out of sight of the lower deck for the whole trip,
+  // and everyone who saw you head for the stairs knows it.
+  {
+    id: 'sample-medbay-laboratory',
+    label: 'Levar a amostra (Enfermaria → Laboratório)',
+    steps: [
+      { roomId: 'medbay', offset: [2, 0, -2], verb: 'coletar a amostra', carrying: 'Amostra' },
+      { roomId: 'laboratory', offset: [2, 0, -2], verb: 'analisar a amostra' },
+    ],
+  },
+  {
+    id: 'antenna-storage-radioTower',
+    label: 'Trocar a antena (Depósito → Torre de Rádio)',
+    steps: [
+      { roomId: 'storage', offset: [-2, 0, 2], verb: 'pegar a antena', carrying: 'Antena' },
+      { roomId: 'radioTower', offset: [1.5, 0, 1.5], verb: 'instalar a antena' },
+    ],
+  },
 ]
 
 export function getTaskById(taskId) {
