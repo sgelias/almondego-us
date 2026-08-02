@@ -1,5 +1,6 @@
 import { isKnownMessageType } from '../../shared/protocol.js'
 
+export const CONNECTED = '_connected'
 export const CONNECTION_ERROR = '_connectionError'
 
 export function createNetClient(url) {
@@ -14,6 +15,7 @@ export function createNetClient(url) {
 
   socket.addEventListener('open', () => {
     hasOpened = true
+    emit(CONNECTED, {})
   })
 
   socket.addEventListener('message', (event) => {
