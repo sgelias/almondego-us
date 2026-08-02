@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { readFile, stat, readdir } from 'node:fs/promises'
 import { extname, join, normalize, resolve } from 'node:path'
 import { getLanAddress } from '../server/lanAddress.js'
+import { handlePortInUse } from '../shared/portInUse.js'
 
 // A static file server for the client, replacing `python3 -m http.server`.
 //
@@ -40,7 +41,7 @@ function safePath(urlPath) {
 
 const MATCH_PORT = process.env.PORT || 8080
 
-createServer(async (request, response) => {
+const webServer = createServer(async (request, response) => {
   // The page cannot know the machine's LAN address on its own - it only sees
   // whatever hostname was typed, which is "localhost" for the host. Serving
   // it here lets the lobby show the address to hand to other players, and
@@ -99,7 +100,11 @@ createServer(async (request, response) => {
   } catch {
     response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Não encontrado')
   }
-}).listen(PORT, () => {
+})
+
+handlePortInUse(webServer, { port: PORT, what: 'cliente' })
+
+webServer.listen(PORT, () => {
   console.log(`AlmondegoUs — cliente em http://localhost:${PORT}`)
   console.log(`Outros jogadores na mesma rede: http://${getLanAddress()}:${PORT}`)
   console.log('Cache desativado: recarregar sempre traz a versão mais recente.')

@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import { randomUUID } from 'node:crypto'
 import { getLanAddress } from './lanAddress.js'
+import { handlePortInUse } from '../shared/portInUse.js'
 import { MESSAGE_TYPE, isKnownMessageType } from '../shared/protocol.js'
 import { sanitizeNoticeText, pushNotice, canPostNotice } from '../shared/lobbyNotices.js'
 import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
@@ -68,6 +69,7 @@ function syncBotPause() {
 }
 
 const wss = new WebSocketServer({ port: PORT })
+handlePortInUse(wss, { port: PORT, what: 'servidor de partida' })
 
 function send(socket, type, payload) {
   if (socket && socket.readyState === WebSocket.OPEN) {
@@ -340,4 +342,9 @@ wss.on('connection', (socket) => {
   })
 })
 
-console.log(`AlmondegoUs — servidor de partida em ws://${getLanAddress()}:${PORT}`)
+// On 'listening', not at module scope. Printed eagerly it announced success
+// on a port that was already taken - the banner and the failure raced, and
+// the banner won.
+wss.on('listening', () => {
+  console.log(`AlmondegoUs — servidor de partida em ws://${getLanAddress()}:${PORT}`)
+})
