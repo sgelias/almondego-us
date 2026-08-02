@@ -100,6 +100,20 @@ test('checkWinCondition returns crew immediately once the impostor is no longer 
   assert.equal(checkWinCondition(match), 'crew')
 })
 
+test('a dead crewmate\'s unfinished tasks are excluded from the win check (a Crewmate death must not make the task-win path unreachable)', () => {
+  const match = createMatch(['a', 'b', 'c', 'd'], seededRandom(11))
+  const impostorId = ['a', 'b', 'c', 'd'].find((id) => getRole(match, id) === 'impostor')
+  const crewIds = ['a', 'b', 'c', 'd'].filter((id) => id !== impostorId)
+
+  recordDeath(match, crewIds[0]) // dies with all 3 tasks still incomplete
+
+  for (const survivorId of [crewIds[1], crewIds[2]]) {
+    for (const taskId of getAssignedTasks(match, survivorId)) completeTask(match, survivorId, taskId)
+  }
+
+  assert.equal(checkWinCondition(match), 'crew')
+})
+
 test('checkWinCondition returns impostor once living crew drops to 1', () => {
   const match = createMatch(['a', 'b', 'c'], seededRandom(11))
   const impostorId = ['a', 'b', 'c'].find((id) => getRole(match, id) === 'impostor')

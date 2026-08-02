@@ -7,12 +7,18 @@ const SCREEN_CENTER = new THREE.Vector2(0, 0)
 // array. Milestone 3 needs to raycast against remote-player meshes too, which
 // are added/removed as players join/die - a snapshot array can't reflect
 // that, so this now takes a callback returning the current list each frame.
-export function createInteractSystem(camera, getInteractables) {
+//
+// getPromptText(target) is optional: given the current raycast hit, return
+// the prompt string to show, or a falsy value to show nothing. Without it,
+// every hit shows a generic "Press E to interact" - GAME-04/GAME-13 require
+// role- and assignment-aware suppression (e.g. no prompt for a Crewmate
+// looking at a vent), which only the caller (main.js) has enough context to
+// decide.
+export function createInteractSystem(camera, getInteractables, getPromptText) {
   const raycaster = new THREE.Raycaster()
   raycaster.far = INTERACT_RANGE
 
   const prompt = document.createElement('div')
-  prompt.textContent = 'Press E to interact'
   prompt.style.position = 'fixed'
   prompt.style.left = '50%'
   prompt.style.top = '55%'
@@ -31,7 +37,14 @@ export function createInteractSystem(camera, getInteractables) {
       raycaster.setFromCamera(SCREEN_CENTER, camera)
       const hits = raycaster.intersectObjects(getInteractables(), false)
       currentTarget = hits.length > 0 ? hits[0].object : null
-      prompt.style.display = currentTarget ? 'block' : 'none'
+
+      const text = currentTarget
+        ? getPromptText
+          ? getPromptText(currentTarget)
+          : 'Press E to interact'
+        : null
+      prompt.textContent = text ?? ''
+      prompt.style.display = text ? 'block' : 'none'
     },
 
     getTarget() {

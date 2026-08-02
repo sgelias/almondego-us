@@ -53,9 +53,41 @@ mapGroup.updateMatrixWorld(true)
 const worldOctree = buildWorldOctree(mapGroup)
 const player = createPlayerController(camera, worldOctree, spawnPoint)
 const remotePlayers = createRemotePlayers(scene)
+
+// GAME-04/GAME-13: a task prompt only makes sense for a Crewmate looking at
+// one of their own, still-incomplete tasks; a vent/kill prompt only for the
+// Impostor. assignedTaskIds/completedTaskIds are populated by the ROLE and
+// task-completion handlers below.
+const assignedTaskIds = new Set()
+const completedTaskIds = new Set()
+
+function getPromptText(target) {
+  const { kind } = target.userData
+  if (kind === 'task') {
+    if (localRole !== 'crewmate') return null
+    if (!assignedTaskIds.has(target.userData.taskId)) return null
+    if (completedTaskIds.has(target.userData.taskId)) return null
+    return 'Hold E to do task'
+  }
+  if (kind === 'vent') {
+    return localRole === 'impostor' ? 'Press E to vent' : null
+  }
+  if (kind === 'emergencyButton') {
+    return 'Press E to call meeting'
+  }
+  if (kind === 'player') {
+    return localRole === 'impostor' ? 'Press E to kill' : null
+  }
+  return null
+}
+
 // Remote player avatars come and go as players join/die, so the raycast
 // target list is read fresh each frame rather than captured once.
-const interactSystem = createInteractSystem(camera, () => [...staticInteractables, ...remotePlayers.getMeshes()])
+const interactSystem = createInteractSystem(
+  camera,
+  () => [...staticInteractables, ...remotePlayers.getMeshes()],
+  getPromptText
+)
 
 const roleUI = createRoleUI()
 
@@ -72,6 +104,11 @@ let started = false
 let gameEnded = false
 let localPlayerId = null
 let localRole = null
+let localAlive = true
+// Suppresses task-hold interaction while a meeting is up or the game has
+// ended - the player may be frozen mid-task with E still held down, and
+// taskInteraction.update() runs every frame regardless of freeze state.
+let interactionsPaused = false
 let taskInteraction = null
 let interactKeyDown = false
 
@@ -101,7 +138,7 @@ function showDeathNotice() {
 }
 
 function handleInteractPress() {
-  if (!started || gameEnded || !netClient) return
+  if (!started || gameEnded || !netClient || !localAlive) return
   const target = interactSystem.getTarget()
   if (!target) return
 
@@ -163,6 +200,10 @@ function connect(url, name, lobby) {
 
   netClient.on(MESSAGE_TYPE.ROLE, (msg) => {
     localRole = msg.role
+    assignedTaskIds.clear()
+    for (const taskId of msg.taskIds) assignedTaskIds.add(taskId)
+    completedTaskIds.clear()
+
     const taskLabelsById = {}
     for (const taskId of msg.taskIds) {
       taskLabelsById[taskId] = TASK_LOCATIONS.find((task) => task.id === taskId)?.label ?? taskId
@@ -170,6 +211,7 @@ function connect(url, name, lobby) {
     roleUI.showRole(msg.role, taskLabelsById)
 
     taskInteraction = createTaskInteraction(interactSystem, msg.taskIds, (taskId) => {
+      completedTaskIds.add(taskId)
       roleUI.markTaskDone(taskId)
       netClient.send(MESSAGE_TYPE.TASK_COMPLETE, { taskId })
     })
@@ -181,11 +223,20 @@ function connect(url, name, lobby) {
 
   netClient.on(MESSAGE_TYPE.PLAYER_DIED, (msg) => {
     remotePlayers.remove(msg.id)
-    if (msg.id === localPlayerId) showDeathNotice()
+    if (msg.id === localPlayerId) {
+      localAlive = false
+      showDeathNotice()
+    }
   })
 
   netClient.on(MESSAGE_TYPE.MEETING_STARTED, (msg) => {
     player.setFrozen(true)
+    interactionsPaused = true
+    // Pointer lock captures the mouse for camera look, so the vote buttons
+    // below would never receive a click while locked - release it here; the
+    // pointer-lock overlay's own "click to resume" flow handles regaining it
+    // once the meeting ends (browsers require a user gesture to re-lock).
+    document.exitPointerLock()
     meetingUI.showDiscussion(msg.discussionSeconds)
     setTimeout(() => {
       if (!gameEnded) meetingUI.showVoting(msg.livingPlayers, msg.votingSeconds)
@@ -195,7 +246,10 @@ function connect(url, name, lobby) {
   netClient.on(MESSAGE_TYPE.MEETING_RESULT, (msg) => {
     if (msg.ejectedId) {
       remotePlayers.remove(msg.ejectedId)
-      if (msg.ejectedId === localPlayerId) showDeathNotice()
+      if (msg.ejectedId === localPlayerId) {
+        localAlive = false
+        showDeathNotice()
+      }
     }
     const ejectedName = msg.ejectedId ? (roster.get(msg.ejectedId)?.name ?? 'Someone') : null
     meetingUI.showResult(ejectedName, msg.wasImpostor)
@@ -203,13 +257,16 @@ function connect(url, name, lobby) {
       if (!gameEnded) {
         meetingUI.hide()
         player.setFrozen(false)
+        interactionsPaused = false
       }
     }, MEETING_RESULT_DISPLAY_MS)
   })
 
   netClient.on(MESSAGE_TYPE.GAME_OVER, (msg) => {
     gameEnded = true
+    interactionsPaused = true
     player.setFrozen(true)
+    document.exitPointerLock()
     meetingUI.hide()
     const impostorName =
       roster.get(msg.impostorId)?.name ?? (msg.impostorId === localPlayerId ? 'you' : 'Unknown')
@@ -246,7 +303,9 @@ function startGame(lobby) {
     player.update(deltaTime)
     interactSystem.update()
     remotePlayers.update(deltaTime)
-    if (taskInteraction) taskInteraction.update(deltaTime, interactKeyDown)
+    if (taskInteraction && localAlive && !interactionsPaused) {
+      taskInteraction.update(deltaTime, interactKeyDown)
+    }
 
     stateSendAccumulator += deltaTime
     if (stateSendAccumulator >= STATE_SEND_INTERVAL) {

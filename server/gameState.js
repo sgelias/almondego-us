@@ -11,10 +11,16 @@ function pickRandomSubset(items, count, randomFn) {
   return pool.slice(0, count)
 }
 
+// Only living Crewmates' tasks count. Without this, a dead Crewmate's
+// unfinished tasks stay in the denominator forever - since the server also
+// rejects taskComplete from the dead (see completeTask/isAlive), the
+// remaining crew could never reach 100% and the task-win path would be
+// permanently unreachable after any death.
 function tasksSummary(match) {
   let completed = 0
   let total = 0
-  for (const tasks of match.tasksByPlayer.values()) {
+  for (const [playerId, tasks] of match.tasksByPlayer) {
+    if (!match.alive.has(playerId)) continue
     total += tasks.length
     completed += tasks.filter((task) => task.done).length
   }
