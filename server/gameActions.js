@@ -1,0 +1,185 @@
+import { MESSAGE_TYPE } from '../shared/protocol.js'
+import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
+import { VENT_LOCATIONS, getVentDestination } from '../shared/ventPool.js'
+import * as gameState from './gameState.js'
+
+export const DISCUSSION_SECONDS = 15
+export const VOTING_SECONDS = 20
+// Matches playerController's settled eye height (capsule radius + half its
+// segment height) so a teleported player doesn't visibly pop up/down.
+export const TELEPORT_EYE_HEIGHT = 1.35
+
+function ventPosition(ventId) {
+  const vent = VENT_LOCATIONS.find((v) => v.id === ventId)
+  const room = ROOM_LAYOUT.find((r) => r.id === vent.roomId)
+  return [room.center[0] + vent.offset[0], TELEPORT_EYE_HEIGHT, room.center[2] + vent.offset[2]]
+}
+
+// Every in-match action, keyed on playerId rather than on a socket, so a
+// bot (which has no socket to send itself a message) and a human run the
+// exact same validation, state change, broadcast, and win check. Duplicating
+// these for bots would guarantee the two copies drift - see bot-players
+// spec.md BOT-02.
+//
+// `hooks` lets the bot layer observe events it could plausibly witness
+// (kills, vents) without this module having to know bots exist.
+export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToAll, sendToPlayer, hooks = {} }) {
+  let meetingTimer = null
+
+  // checkTasks: false for every path triggered by a death (kill/ejection/
+  // disconnect) - a death must never itself complete the task-win condition,
+  // only an actual TASK_COMPLETE should (see gameState.checkWinCondition).
+  function checkAndBroadcastWin(checkTasks) {
+    const match = getMatch()
+    if (!match) return
+    const winner = gameState.checkWinCondition(match, { checkTasks })
+    if (!winner) return
+    match.phase = 'gameOver'
+    broadcastToAll(MESSAGE_TYPE.GAME_OVER, { winner, impostorId: match.impostorId })
+    hooks.onGameOver?.()
+  }
+
+  function finishMeeting() {
+    const match = getMatch()
+    if (!match) return
+    if (meetingTimer) {
+      clearTimeout(meetingTimer)
+      meetingTimer = null
+    }
+    const { ejectedId, wasImpostor } = gameState.tallyVotes(match)
+    if (ejectedId) gameState.recordDeath(match, ejectedId)
+    gameState.endMeeting(match)
+    broadcastToAll(MESSAGE_TYPE.MEETING_RESULT, { ejectedId, wasImpostor })
+    hooks.onMeetingEnded?.(ejectedId)
+    checkAndBroadcastWin(false)
+  }
+
+  function startMatch(playerIds) {
+    const match = gameState.createMatch(playerIds, Math.random)
+    setMatch(match)
+    for (const playerId of playerIds) {
+      sendToPlayer(playerId, MESSAGE_TYPE.ROLE, {
+        role: gameState.getRole(match, playerId),
+        taskIds: gameState.getAssignedTasks(match, playerId),
+      })
+    }
+    return match
+  }
+
+  function doTaskComplete(playerId, taskId) {
+    const match = getMatch()
+    if (!match || match.phase !== 'playing') return false
+    if (!playerId || !gameState.isAlive(match, playerId)) return false
+    if (gameState.getRole(match, playerId) !== 'crewmate') return false
+    if (!gameState.getAssignedTasks(match, playerId).includes(taskId)) return false
+
+    const progress = gameState.completeTask(match, playerId, taskId)
+    broadcastToAll(MESSAGE_TYPE.TASKS_PROGRESS, { completed: progress.completed, total: progress.total })
+    checkAndBroadcastWin(true)
+    return true
+  }
+
+  function doKill(playerId, targetId) {
+    const match = getMatch()
+    if (!match || match.phase !== 'playing') return false
+    if (!playerId || gameState.getRole(match, playerId) !== 'impostor') return false
+    if (!gameState.isAlive(match, playerId)) return false
+    if (targetId === playerId || !gameState.isAlive(match, targetId)) return false
+
+    gameState.recordDeath(match, targetId)
+    broadcastToAll(MESSAGE_TYPE.PLAYER_DIED, { id: targetId, cause: 'killed' })
+    hooks.onKill?.(playerId, targetId)
+    checkAndBroadcastWin(false)
+    return true
+  }
+
+  function doCallMeeting(playerId) {
+    const match = getMatch()
+    if (!match || match.phase !== 'playing') return false
+    if (!playerId || !gameState.isAlive(match, playerId)) return false
+
+    gameState.startMeeting(match)
+    const players = getPlayers()
+    const livingPlayers = [...match.alive].map((id) => ({ id, name: players.get(id)?.name ?? 'Jogador' }))
+    broadcastToAll(MESSAGE_TYPE.MEETING_STARTED, {
+      livingPlayers,
+      discussionSeconds: DISCUSSION_SECONDS,
+      votingSeconds: VOTING_SECONDS,
+    })
+    meetingTimer = setTimeout(finishMeeting, (DISCUSSION_SECONDS + VOTING_SECONDS) * 1000)
+    hooks.onMeetingStarted?.({
+      livingPlayers,
+      discussionSeconds: DISCUSSION_SECONDS,
+      votingSeconds: VOTING_SECONDS,
+    })
+    return true
+  }
+
+  function doVote(playerId, targetId) {
+    const match = getMatch()
+    if (!match || match.phase !== 'meeting') return false
+    if (!playerId || !gameState.isAlive(match, playerId)) return false
+    if (targetId !== 'skip' && !gameState.isAlive(match, targetId)) return false
+
+    gameState.castVote(match, playerId, targetId)
+    if (match.votes.size >= match.alive.size) finishMeeting()
+    return true
+  }
+
+  // Returns the destination position rather than only sending it, so the bot
+  // layer can move its own simulated body to the same place a human client
+  // would teleport itself to on receiving the message.
+  function doVent(playerId, ventId) {
+    const match = getMatch()
+    if (!match || match.phase !== 'playing') return null
+    if (!playerId || gameState.getRole(match, playerId) !== 'impostor') return null
+    if (!gameState.isAlive(match, playerId)) return null
+
+    const destinationVentId = getVentDestination(ventId)
+    if (!destinationVentId) return null
+
+    const position = ventPosition(destinationVentId)
+    sendToPlayer(playerId, MESSAGE_TYPE.TELEPORT, { position })
+    hooks.onVent?.(playerId, ventId, destinationVentId)
+    return { destinationVentId, position }
+  }
+
+  // The game-rules half of a disconnect; the caller still owns removing the
+  // player from the roster/socket maps.
+  function doPlayerLeft(playerId) {
+    const match = getMatch()
+    if (!match || !gameState.isAlive(match, playerId)) return
+    if (playerId === match.impostorId) {
+      match.phase = 'gameOver'
+      broadcastToAll(MESSAGE_TYPE.GAME_OVER, { winner: 'crew', impostorId: match.impostorId })
+      hooks.onGameOver?.()
+      return
+    }
+    gameState.recordDeath(match, playerId)
+    checkAndBroadcastWin(false)
+  }
+
+  function cancelTimers() {
+    if (meetingTimer) {
+      clearTimeout(meetingTimer)
+      meetingTimer = null
+    }
+  }
+
+  function isAlive(playerId) {
+    const match = getMatch()
+    return !match || gameState.isAlive(match, playerId)
+  }
+
+  return {
+    isAlive,
+    startMatch,
+    doTaskComplete,
+    doKill,
+    doCallMeeting,
+    doVote,
+    doVent,
+    doPlayerLeft,
+    cancelTimers,
+  }
+}

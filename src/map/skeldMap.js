@@ -1,11 +1,10 @@
 import * as THREE from 'three'
 import { ROOM_LAYOUT } from '../../shared/skeldRooms.js'
-import { computeCorridors } from '../../shared/corridorRouting.js'
+import { CORRIDOR_WIDTH, SKELD_CORRIDORS } from '../../shared/skeldCorridors.js'
 import { TASK_LOCATIONS } from '../../shared/taskPool.js'
 import { VENT_LOCATIONS } from '../../shared/ventPool.js'
 
 const WALL_THICKNESS = 0.3
-const CORRIDOR_WIDTH = 4
 const FLOOR_THICKNESS = 0.2
 const WALL_EPSILON = 1e-6
 
@@ -14,18 +13,6 @@ const WALL_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x8899aa })
 const TASK_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xffcc00 })
 const VENT_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x333333 })
 const EMERGENCY_BUTTON_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xdd2222 })
-
-// upperEngine-reactor's straight/single-bend routes both tunnel through
-// lowerEngine (it sits directly between them); the BFS router handles every
-// other connection but this one needs a hand-authored detour around it.
-const CORRIDOR_OVERRIDES = {
-  'reactor->upperEngine': [
-    [-33, 11],
-    [-25, 11],
-    [-25, -33],
-    [-33, -33],
-  ],
-}
 
 function addFloorSlab(group, centerX, centerZ, width, depth) {
   const geometry = new THREE.BoxGeometry(width, FLOOR_THICKNESS, depth)
@@ -293,7 +280,7 @@ function addEmergencyButton(group) {
 
 export function buildSkeldMap() {
   const group = new THREE.Group()
-  const corridors = computeCorridors(ROOM_LAYOUT, CORRIDOR_WIDTH, CORRIDOR_OVERRIDES)
+  const corridors = SKELD_CORRIDORS
   const roomsById = new Map(ROOM_LAYOUT.map((room) => [room.id, room]))
 
   for (const room of ROOM_LAYOUT) {

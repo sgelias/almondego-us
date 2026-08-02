@@ -3,20 +3,16 @@ import { networkInterfaces } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { MESSAGE_TYPE, isKnownMessageType } from '../shared/protocol.js'
 import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
-import { VENT_LOCATIONS, getVentDestination } from '../shared/ventPool.js'
-import * as gameState from './gameState.js'
+import { createGameActions } from './gameActions.js'
+import { createBotRunner } from './botRunner.js'
 
 const PORT = process.env.PORT || 8080
-// 3, not 2: with exactly 1 impostor, a 2-player match (1 crew) starts with
-// living crew == living impostors, which trivially satisfies the impostor
-// parity-win condition before anything happens. 3 players (1 impostor +
-// 2 crew) keeps crew strictly ahead until an actual kill occurs.
-const MIN_PLAYERS_TO_START = 3
-const DISCUSSION_SECONDS = 15
-const VOTING_SECONDS = 20
-// Matches playerController's settled eye height (capsule radius + half its
-// segment height) so a teleported player doesn't visibly pop up/down.
-const TELEPORT_EYE_HEIGHT = 1.35
+// 1, not 3: empty slots are filled with bots up to TARGET_PLAYER_COUNT, so a
+// solo player still gets a full, playable match. This supersedes
+// core-game-loop's GAME-15 (which required 3 humans to avoid the impostor
+// starting at parity) - a 6-player match is never at parity on kickoff.
+const MIN_PLAYERS_TO_START = 1
+const TARGET_PLAYER_COUNT = 6
 
 function getLanAddress() {
   const interfaces = networkInterfaces()
@@ -29,7 +25,7 @@ function getLanAddress() {
 }
 
 function resolveName(requestedName, players) {
-  const name = requestedName || 'Player'
+  const name = requestedName || 'Jogador'
   const existingNames = new Set([...players.values()].map((p) => p.name))
   if (!existingNames.has(name)) return name
   let suffix = 2
@@ -37,17 +33,18 @@ function resolveName(requestedName, players) {
   return `${name} (${suffix})`
 }
 
-function ventPosition(ventId) {
-  const vent = VENT_LOCATIONS.find((v) => v.id === ventId)
-  const room = ROOM_LAYOUT.find((r) => r.id === vent.roomId)
-  return [room.center[0] + vent.offset[0], TELEPORT_EYE_HEIGHT, room.center[2] + vent.offset[2]]
+function spawnPoint() {
+  const cafeteria = ROOM_LAYOUT.find((room) => room.id === 'cafeteria')
+  return [cafeteria.center[0], 1.35, cafeteria.center[2]]
 }
 
 const players = new Map()
 const socketsByPlayerId = new Map()
+// Latest reported position per human, so bot sensing can see real players
+// the same way it sees other bots.
+const humanPositions = new Map()
 let hostId = null
 let match = null
-let meetingTimer = null
 
 const wss = new WebSocketServer({ port: PORT })
 
@@ -55,6 +52,12 @@ function send(socket, type, payload) {
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type, ...payload }))
   }
+}
+
+function sendToPlayer(playerId, type, payload) {
+  // A bot has no socket; its own actions are applied directly by botRunner,
+  // so there is nothing to deliver.
+  send(socketsByPlayerId.get(playerId), type, payload)
 }
 
 function broadcastToOthers(senderSocket, type, payload) {
@@ -69,27 +72,67 @@ function broadcastToAll(type, payload) {
   }
 }
 
-// checkTasks: false for every path triggered by a death (kill/ejection/
-// disconnect) - a death must never itself complete the task-win condition,
-// only an actual TASK_COMPLETE should (see gameState.checkWinCondition).
-function checkAndBroadcastWin(checkTasks) {
-  if (!match) return
-  const winner = gameState.checkWinCondition(match, { checkTasks })
-  if (!winner) return
-  match.phase = 'gameOver'
-  broadcastToAll(MESSAGE_TYPE.GAME_OVER, { winner, impostorId: match.impostorId })
-}
+// botRunner and gameActions are mutually dependent (bots invoke actions;
+// actions notify bots of witnessable events), so the hooks resolve the
+// runner lazily rather than at construction time.
+let botRunner = null
 
-function finishMeeting() {
-  if (meetingTimer) {
-    clearTimeout(meetingTimer)
-    meetingTimer = null
+const gameActions = createGameActions({
+  getMatch: () => match,
+  setMatch: (next) => {
+    match = next
+  },
+  getPlayers: () => players,
+  broadcastToAll,
+  sendToPlayer,
+  hooks: {
+    onKill: (killerId, victimId) => botRunner?.hooks.onKill(killerId, victimId),
+    onVent: (playerId) => botRunner?.hooks.onVent(playerId),
+    onMeetingStarted: (info) => botRunner?.hooks.onMeetingStarted(info),
+    onMeetingEnded: () => botRunner?.hooks.onMeetingEnded(),
+    onGameOver: () => botRunner?.hooks.onGameOver(),
+  },
+})
+
+botRunner = createBotRunner({
+  gameActions,
+  getMatch: () => match,
+  getPlayers: () => players,
+  getHumanPositions: () => humanPositions,
+  broadcastState: (id, position, rotationY, seq) => {
+    broadcastToAll(MESSAGE_TYPE.STATE, { id, position, rotationY, seq })
+  },
+})
+
+function startMatch(socket) {
+  if (socket.playerId !== hostId) return
+  gameActions.cancelTimers()
+  botRunner.stop()
+
+  // Drop any bots left over from a previous match before counting humans.
+  for (const [id, player] of [...players]) {
+    if (player.isBot) players.delete(id)
   }
-  const { ejectedId, wasImpostor } = gameState.tallyVotes(match)
-  if (ejectedId) gameState.recordDeath(match, ejectedId)
-  gameState.endMeeting(match)
-  broadcastToAll(MESSAGE_TYPE.MEETING_RESULT, { ejectedId, wasImpostor })
-  checkAndBroadcastWin(false)
+
+  if (players.size < MIN_PLAYERS_TO_START) {
+    send(socket, MESSAGE_TYPE.ERROR, { message: 'É necessário pelo menos 1 jogador para iniciar.' })
+    return
+  }
+
+  const humanNames = [...players.values()].map((player) => player.name)
+  const botsNeeded = Math.max(0, TARGET_PLAYER_COUNT - players.size)
+  const createdBots = botRunner.spawnBots(botsNeeded, humanNames, spawnPoint())
+
+  // Announced as ordinary joins so every client's roster, name labels, and
+  // remote-avatar rendering treat bots exactly like humans (BOT-03).
+  for (const { id, name } of createdBots) {
+    players.set(id, { name, isBot: true })
+    broadcastToAll(MESSAGE_TYPE.PLAYER_JOINED, { id, name })
+  }
+
+  broadcastToAll(MESSAGE_TYPE.START, {})
+  gameActions.startMatch([...players.keys()])
+  botRunner.start()
 }
 
 wss.on('connection', (socket) => {
@@ -102,120 +145,65 @@ wss.on('connection', (socket) => {
     }
     if (!isKnownMessageType(message.type)) return
 
-    if (message.type === MESSAGE_TYPE.JOIN) {
-      const id = randomUUID()
-      const name = resolveName(message.name, players)
-      const isHost = hostId === null
-      if (isHost) hostId = id
+    switch (message.type) {
+      case MESSAGE_TYPE.JOIN: {
+        const id = randomUUID()
+        const name = resolveName(message.name, players)
+        const isHost = hostId === null
+        if (isHost) hostId = id
 
-      players.set(id, { name })
-      socketsByPlayerId.set(id, socket)
-      socket.playerId = id
+        players.set(id, { name })
+        socketsByPlayerId.set(id, socket)
+        socket.playerId = id
 
-      send(socket, MESSAGE_TYPE.WELCOME, {
-        playerId: id,
-        isHost,
-        players: [...players.entries()].map(([playerId, player]) => ({ id: playerId, name: player.name })),
-      })
-      broadcastToOthers(socket, MESSAGE_TYPE.PLAYER_JOINED, { id, name })
-      return
-    }
-
-    if (message.type === MESSAGE_TYPE.STATE) {
-      if (!socket.playerId) return
-      if (match && !gameState.isAlive(match, socket.playerId)) return
-      broadcastToOthers(socket, MESSAGE_TYPE.STATE, {
-        id: socket.playerId,
-        position: message.position,
-        rotationY: message.rotationY,
-        seq: message.seq,
-      })
-      return
-    }
-
-    if (message.type === MESSAGE_TYPE.START) {
-      if (socket.playerId !== hostId) return
-      if (players.size < MIN_PLAYERS_TO_START) {
-        send(socket, MESSAGE_TYPE.ERROR, { message: 'São necessários pelo menos 3 jogadores para iniciar.' })
+        send(socket, MESSAGE_TYPE.WELCOME, {
+          playerId: id,
+          isHost,
+          players: [...players.entries()].map(([playerId, player]) => ({ id: playerId, name: player.name })),
+        })
+        broadcastToOthers(socket, MESSAGE_TYPE.PLAYER_JOINED, { id, name })
         return
       }
-      broadcastToAll(MESSAGE_TYPE.START, {})
 
-      const playerIds = [...players.keys()]
-      match = gameState.createMatch(playerIds, Math.random)
-      for (const playerId of playerIds) {
-        send(socketsByPlayerId.get(playerId), MESSAGE_TYPE.ROLE, {
-          role: gameState.getRole(match, playerId),
-          taskIds: gameState.getAssignedTasks(match, playerId),
+      case MESSAGE_TYPE.STATE: {
+        if (!socket.playerId) return
+        humanPositions.set(socket.playerId, message.position)
+        if (match && !gameActions.isAlive(socket.playerId)) return
+        broadcastToOthers(socket, MESSAGE_TYPE.STATE, {
+          id: socket.playerId,
+          position: message.position,
+          rotationY: message.rotationY,
+          seq: message.seq,
         })
+        return
       }
-      return
-    }
 
-    if (message.type === MESSAGE_TYPE.TASK_COMPLETE) {
-      if (!match || match.phase !== 'playing') return
-      const playerId = socket.playerId
-      if (!playerId || !gameState.isAlive(match, playerId)) return
-      if (gameState.getRole(match, playerId) !== 'crewmate') return
-      if (!gameState.getAssignedTasks(match, playerId).includes(message.taskId)) return
+      case MESSAGE_TYPE.START:
+        startMatch(socket)
+        return
 
-      const progress = gameState.completeTask(match, playerId, message.taskId)
-      broadcastToAll(MESSAGE_TYPE.TASKS_PROGRESS, { completed: progress.completed, total: progress.total })
-      checkAndBroadcastWin(true)
-      return
-    }
+      case MESSAGE_TYPE.TASK_COMPLETE:
+        gameActions.doTaskComplete(socket.playerId, message.taskId)
+        return
 
-    if (message.type === MESSAGE_TYPE.KILL) {
-      if (!match || match.phase !== 'playing') return
-      const playerId = socket.playerId
-      if (!playerId || gameState.getRole(match, playerId) !== 'impostor') return
-      if (!gameState.isAlive(match, playerId)) return
-      const targetId = message.targetId
-      if (targetId === playerId || !gameState.isAlive(match, targetId)) return
+      case MESSAGE_TYPE.KILL:
+        gameActions.doKill(socket.playerId, message.targetId)
+        return
 
-      gameState.recordDeath(match, targetId)
-      broadcastToAll(MESSAGE_TYPE.PLAYER_DIED, { id: targetId, cause: 'killed' })
-      checkAndBroadcastWin(false)
-      return
-    }
+      case MESSAGE_TYPE.CALL_MEETING:
+        gameActions.doCallMeeting(socket.playerId)
+        return
 
-    if (message.type === MESSAGE_TYPE.CALL_MEETING) {
-      if (!match || match.phase !== 'playing') return
-      const playerId = socket.playerId
-      if (!playerId || !gameState.isAlive(match, playerId)) return
+      case MESSAGE_TYPE.VOTE:
+        gameActions.doVote(socket.playerId, message.targetId)
+        return
 
-      gameState.startMeeting(match)
-      const livingPlayers = [...match.alive].map((id) => ({ id, name: players.get(id).name }))
-      broadcastToAll(MESSAGE_TYPE.MEETING_STARTED, {
-        livingPlayers,
-        discussionSeconds: DISCUSSION_SECONDS,
-        votingSeconds: VOTING_SECONDS,
-      })
-      meetingTimer = setTimeout(finishMeeting, (DISCUSSION_SECONDS + VOTING_SECONDS) * 1000)
-      return
-    }
+      case MESSAGE_TYPE.VENT:
+        gameActions.doVent(socket.playerId, message.ventId)
+        return
 
-    if (message.type === MESSAGE_TYPE.VOTE) {
-      if (!match || match.phase !== 'meeting') return
-      const playerId = socket.playerId
-      if (!playerId || !gameState.isAlive(match, playerId)) return
-      const targetId = message.targetId
-      if (targetId !== 'skip' && !gameState.isAlive(match, targetId)) return
-
-      gameState.castVote(match, playerId, targetId)
-      if (match.votes.size >= match.alive.size) finishMeeting()
-      return
-    }
-
-    if (message.type === MESSAGE_TYPE.VENT) {
-      if (!match || match.phase !== 'playing') return
-      const playerId = socket.playerId
-      if (!playerId || gameState.getRole(match, playerId) !== 'impostor') return
-      if (!gameState.isAlive(match, playerId)) return
-
-      const destinationVentId = getVentDestination(message.ventId)
-      if (!destinationVentId) return
-      send(socket, MESSAGE_TYPE.TELEPORT, { position: ventPosition(destinationVentId) })
+      default:
+        return
     }
   })
 
@@ -225,18 +213,11 @@ wss.on('connection', (socket) => {
 
     players.delete(playerId)
     socketsByPlayerId.delete(playerId)
+    humanPositions.delete(playerId)
     broadcastToAll(MESSAGE_TYPE.PLAYER_LEFT, { id: playerId })
     if (playerId === hostId) hostId = null
 
-    if (match && gameState.isAlive(match, playerId)) {
-      if (playerId === match.impostorId) {
-        match.phase = 'gameOver'
-        broadcastToAll(MESSAGE_TYPE.GAME_OVER, { winner: 'crew', impostorId: match.impostorId })
-      } else {
-        gameState.recordDeath(match, playerId)
-        checkAndBroadcastWin(false)
-      }
-    }
+    gameActions.doPlayerLeft(playerId)
   })
 })
 
