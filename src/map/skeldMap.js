@@ -1,11 +1,13 @@
 import * as THREE from 'three'
-import { ROOM_LAYOUT } from './skeldRooms.js'
+import { ROOM_LAYOUT } from '../../shared/skeldRooms.js'
+import { computeCorridors } from '../../shared/corridorRouting.js'
 import { TASK_LOCATIONS } from '../../shared/taskPool.js'
 import { VENT_LOCATIONS } from '../../shared/ventPool.js'
 
 const WALL_THICKNESS = 0.3
 const CORRIDOR_WIDTH = 4
 const FLOOR_THICKNESS = 0.2
+const WALL_EPSILON = 1e-6
 
 const FLOOR_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x445566 })
 const WALL_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x8899aa })
@@ -13,24 +15,16 @@ const TASK_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xffcc00 })
 const VENT_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x333333 })
 const EMERGENCY_BUTTON_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xdd2222 })
 
-// Returns where the straight line from `room` to `other` crosses room's own
-// boundary: which wall it exits through, and the coordinate along that wall.
-// Shared by wall-gap placement and corridor placement so both always agree.
-function computeEdge(room, other) {
-  const dx = other.center[0] - room.center[0]
-  const dz = other.center[2] - room.center[2]
-  const distance = Math.hypot(dx, dz)
-  const ux = dx / distance
-  const uz = dz / distance
-  const halfWidth = room.size[0] / 2
-  const halfDepth = room.size[2] / 2
-  const tx = ux !== 0 ? halfWidth / Math.abs(ux) : Infinity
-  const tz = uz !== 0 ? halfDepth / Math.abs(uz) : Infinity
-  const t = Math.min(tx, tz)
-  const point = [room.center[0] + ux * t, room.center[2] + uz * t]
-  const side = tx <= tz ? (ux > 0 ? 'east' : 'west') : uz > 0 ? 'north' : 'south'
-  const coord = side === 'north' || side === 'south' ? point[0] : point[1]
-  return { side, coord, point }
+// upperEngine-reactor's straight/single-bend routes both tunnel through
+// lowerEngine (it sits directly between them); the BFS router handles every
+// other connection but this one needs a hand-authored detour around it.
+const CORRIDOR_OVERRIDES = {
+  'reactor->upperEngine': [
+    [-33, 11],
+    [-25, 11],
+    [-25, -33],
+    [-33, -33],
+  ],
 }
 
 function addFloorSlab(group, centerX, centerZ, width, depth) {
@@ -75,17 +69,35 @@ function buildWallWithGaps(group, fixedCoord, rangeStart, rangeEnd, height, gapC
   }
 }
 
-function buildRoom(group, room) {
+// A corridor endpoint sits exactly on one of the room's 4 cardinal walls
+// (computeCorridors/corridorExitPoint guarantees this) - this identifies
+// which wall and the gap's position along it.
+function wallSideAndCoord(room, point) {
+  const [x, z] = point
+  const [cx, , cz] = room.center
+  const [w, , d] = room.size
+  if (Math.abs(x - (cx + w / 2)) < WALL_EPSILON) return { side: 'east', coord: z }
+  if (Math.abs(x - (cx - w / 2)) < WALL_EPSILON) return { side: 'west', coord: z }
+  if (Math.abs(z - (cz + d / 2)) < WALL_EPSILON) return { side: 'north', coord: x }
+  return { side: 'south', coord: x }
+}
+
+function buildRoom(group, room, corridors) {
   const [width, height, depth] = room.size
   const [cx, , cz] = room.center
 
   addFloorSlab(group, cx, cz, width, depth)
 
   const gapsBySide = { north: [], south: [], east: [], west: [] }
-  for (const connectionId of room.connections) {
-    const other = ROOM_LAYOUT.find((r) => r.id === connectionId)
-    const { side, coord } = computeEdge(room, other)
-    gapsBySide[side].push(coord)
+  for (const corridor of corridors) {
+    if (corridor.roomAId === room.id) {
+      const { side, coord } = wallSideAndCoord(room, corridor.points[0])
+      gapsBySide[side].push(coord)
+    }
+    if (corridor.roomBId === room.id) {
+      const { side, coord } = wallSideAndCoord(room, corridor.points[corridor.points.length - 1])
+      gapsBySide[side].push(coord)
+    }
   }
 
   buildWallWithGaps(group, cz + depth / 2, cx - width / 2, cx + width / 2, height, gapsBySide.north, 'x')
@@ -94,51 +106,66 @@ function buildRoom(group, room) {
   buildWallWithGaps(group, cx - width / 2, cz - depth / 2, cz + depth / 2, height, gapsBySide.west, 'z')
 }
 
-function buildCorridor(group, roomA, roomB) {
-  const dx = roomB.center[0] - roomA.center[0]
-  const dz = roomB.center[2] - roomA.center[2]
+// One straight, axis-aligned length of corridor between two consecutive
+// waypoints - floor plus a wall down each side. Direction is inferred from
+// which coordinate is constant between the two points (both are guaranteed
+// equal on one axis - see corridorRouting.js).
+function buildCorridorSegment(group, x1, z1, x2, z2, height) {
+  const length = Math.hypot(x2 - x1, z2 - z1)
+  if (length < 0.01) return
+  const midX = (x1 + x2) / 2
+  const midZ = (z1 + z2) / 2
+  const runsAlongX = z1 === z2
 
-  const [ax, az] = computeEdge(roomA, roomB).point
-  const [bx, bz] = computeEdge(roomB, roomA).point
-  const corridorLength = Math.hypot(bx - ax, bz - az)
-  const midX = (ax + bx) / 2
-  const midZ = (az + bz) / 2
-  const height = Math.min(roomA.size[1], roomB.size[1])
-  const angle = Math.atan2(-dz, dx)
+  const floorGeometry = runsAlongX
+    ? new THREE.BoxGeometry(length, FLOOR_THICKNESS, CORRIDOR_WIDTH)
+    : new THREE.BoxGeometry(CORRIDOR_WIDTH, FLOOR_THICKNESS, length)
+  const floor = new THREE.Mesh(floorGeometry, FLOOR_MATERIAL)
+  floor.position.set(midX, -FLOOR_THICKNESS / 2, midZ)
+  group.add(floor)
 
-  const corridorGroup = new THREE.Group()
-  corridorGroup.position.set(midX, 0, midZ)
-  corridorGroup.rotation.y = angle
-
-  const floor = new THREE.Mesh(
-    new THREE.BoxGeometry(corridorLength, FLOOR_THICKNESS, CORRIDOR_WIDTH),
-    FLOOR_MATERIAL
-  )
-  floor.position.y = -FLOOR_THICKNESS / 2
-  corridorGroup.add(floor)
-
-  const wallGeometry = new THREE.BoxGeometry(corridorLength, height, WALL_THICKNESS)
-  const wallA = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
-  wallA.position.set(0, height / 2, CORRIDOR_WIDTH / 2)
-  corridorGroup.add(wallA)
-
-  const wallB = new THREE.Mesh(wallGeometry.clone(), WALL_MATERIAL)
-  wallB.position.set(0, height / 2, -CORRIDOR_WIDTH / 2)
-  corridorGroup.add(wallB)
-
-  group.add(corridorGroup)
+  if (runsAlongX) {
+    const wallGeometry = new THREE.BoxGeometry(length, height, WALL_THICKNESS)
+    const wallNorth = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
+    wallNorth.position.set(midX, height / 2, midZ + CORRIDOR_WIDTH / 2)
+    group.add(wallNorth)
+    const wallSouth = new THREE.Mesh(wallGeometry.clone(), WALL_MATERIAL)
+    wallSouth.position.set(midX, height / 2, midZ - CORRIDOR_WIDTH / 2)
+    group.add(wallSouth)
+  } else {
+    const wallGeometry = new THREE.BoxGeometry(WALL_THICKNESS, height, length)
+    const wallEast = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
+    wallEast.position.set(midX + CORRIDOR_WIDTH / 2, height / 2, midZ)
+    group.add(wallEast)
+    const wallWest = new THREE.Mesh(wallGeometry.clone(), WALL_MATERIAL)
+    wallWest.position.set(midX - CORRIDOR_WIDTH / 2, height / 2, midZ)
+    group.add(wallWest)
+  }
 }
 
-function buildCorridors(group) {
-  const built = new Set()
-  for (const room of ROOM_LAYOUT) {
-    for (const connectionId of room.connections) {
-      const pairKey = [room.id, connectionId].sort().join('->')
-      if (built.has(pairKey)) continue
-      built.add(pairKey)
-      const other = ROOM_LAYOUT.find((r) => r.id === connectionId)
-      buildCorridor(group, room, other)
-    }
+// A square, wall-less floor patch at each interior bend, so two
+// perpendicular corridor segments always have continuous floor under their
+// turn regardless of exactly where each segment's own box ends.
+function buildBendPatch(group, x, z) {
+  const geometry = new THREE.BoxGeometry(CORRIDOR_WIDTH, FLOOR_THICKNESS, CORRIDOR_WIDTH)
+  const mesh = new THREE.Mesh(geometry, FLOOR_MATERIAL)
+  mesh.position.set(x, -FLOOR_THICKNESS / 2, z)
+  group.add(mesh)
+}
+
+function buildCorridorPath(group, corridor, roomsById) {
+  const roomA = roomsById.get(corridor.roomAId)
+  const roomB = roomsById.get(corridor.roomBId)
+  const height = Math.min(roomA.size[1], roomB.size[1])
+  const points = corridor.points
+
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const [x1, z1] = points[i]
+    const [x2, z2] = points[i + 1]
+    buildCorridorSegment(group, x1, z1, x2, z2, height)
+  }
+  for (let i = 1; i < points.length - 1; i += 1) {
+    buildBendPatch(group, points[i][0], points[i][1])
   }
 }
 
@@ -180,11 +207,15 @@ function addEmergencyButton(group) {
 
 export function buildSkeldMap() {
   const group = new THREE.Group()
+  const corridors = computeCorridors(ROOM_LAYOUT, CORRIDOR_WIDTH, CORRIDOR_OVERRIDES)
+  const roomsById = new Map(ROOM_LAYOUT.map((room) => [room.id, room]))
 
   for (const room of ROOM_LAYOUT) {
-    buildRoom(group, room)
+    buildRoom(group, room, corridors)
   }
-  buildCorridors(group)
+  for (const corridor of corridors) {
+    buildCorridorPath(group, corridor, roomsById)
+  }
 
   const taskMeshes = addTaskMarkers(group)
   const ventMeshes = addVentMarkers(group)

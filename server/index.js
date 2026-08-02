@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { networkInterfaces } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { MESSAGE_TYPE, isKnownMessageType } from '../shared/protocol.js'
-import { ROOM_LAYOUT } from '../src/map/skeldRooms.js'
+import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
 import { VENT_LOCATIONS, getVentDestination } from '../shared/ventPool.js'
 import * as gameState from './gameState.js'
 

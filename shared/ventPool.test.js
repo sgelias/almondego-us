@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { VENT_LOCATIONS, getVentDestination } from './ventPool.js'
-import { ROOM_LAYOUT } from '../src/map/skeldRooms.js'
+import { ROOM_LAYOUT } from './skeldRooms.js'
 
 test('every group has at least 2 vents', () => {
   const groups = new Map()

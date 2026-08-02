@@ -1,7 +1,7 @@
 # State
 
 **Last Updated:** 2026-08-02
-**Current Work:** All 3 milestones are COMPLETE and user-verified. The user ran the full 4-browser-window playtest (2026-08-02) and confirmed everything works: movement/collision, lobby/join/networked avatar sync, role assignment, tasks, kill, vent, emergency meetings, voting/ejection, and all three win paths (task completion, Impostor ejection, parity). v1 scope per PROJECT.md is done. No open implementation work remains; see "Future Considerations" in ROADMAP.md for anything beyond v1.
+**Current Work:** v1 (all 3 milestones) is complete and playtest-confirmed. The user then asked for three more things, in this order: (1) make the game playable solo/duo by filling empty slots with bots, (2) translate the in-game UI to Portuguese, (3) a major visual/aesthetic overhaul (explicitly sequenced *after* bots). Mid-request, the user also reported the map had floor holes and nonsensical room/corridor shapes - that turned out to be a real, structural geometry bug (not cosmetic), fixed first since both the Portuguese pass and especially the bots depend on a correct map. See AD-006 and L-012 below. Bots feature (`bot-players`) is next up for Specify/Design/Tasks.
 
 ---
 
@@ -42,11 +42,18 @@
 **Trade-off:** Slightly more upfront thought about module boundaries per feature; still must avoid over-engineering (no empty folders/types for unbuilt features — that would violate the "no speculative abstractions" default).
 **Impact:** First-person-movement design.md's components (`map`, `player`, `ui`, `interaction`) are deliberately decoupled so Milestone 2 (networking) and Milestone 3 (game loop) can be added by wiring new modules in `main.js`, not by rewriting existing ones. Apply the same lens to every future design.md.
 
+### AD-006: Room layout data moved to shared/ (2026-08-02)
+
+**Decision:** `skeldRooms.js` (and its test) moved from `src/map/` to `shared/`, alongside `taskPool.js`/`ventPool.js`.
+**Reason:** `server/index.js` already reached into `src/map/skeldRooms.js` for `ventPosition`'s room lookup - a client-only directory being imported by the server was already a leaky boundary. The upcoming bot-players feature makes this load-bearing: the server needs `ROOM_LAYOUT`'s connection graph directly to path bots between rooms, so the reach-across needed to become a legitimate shared module rather than staying an exception.
+**Trade-off:** None meaningful - it's pure data + a pure test, no Three.js/DOM coupling, so the move is a straight relocation (import path updates only).
+**Impact:** `shared/` is now the single source of truth for map topology (`skeldRooms.js`), plus task/vent placement (`taskPool.js`, `ventPool.js`) and the corridor geometry derived from it (`corridorRouting.js`, new - see L-012). `src/map/skeldMap.js` (Three.js mesh building) is the only piece that stays client-only.
+
 ---
 
 ## Active Blockers
 
-None. v1 is complete and playtest-confirmed.
+None currently blocking. Next planned work: Specify/Design/Tasks for the `bot-players` feature (fill empty lobby slots with AI-controlled players, target 6 total, elaborate behavior per user's discuss answers), then a Portuguese localization pass, then a future aesthetics milestone.
 
 ---
 
@@ -127,6 +134,13 @@ None. v1 is complete and playtest-confirmed.
 **Problem:** A second advisor review traced a real sequence this enables: the two on-time Crewmates finish all their tasks while a third Crewmate ("the laggard") has done none of theirs — `tasksSummary` correctly reports not-done. The Impostor then kills the laggard. `tasksSummary` now only iterates the two survivors, who are both fully done — `allDone` flips to `true`, and `checkWinCondition` declares a Crewmate win **caused by the kill itself**, not by anyone finishing a task. This is a direct contradiction of the "every living Crewmate has completed all tasks" rule (GAME-05/GAME-06): the Impostor's own kill would be handing the crew the win.
 **Solution:** `checkWinCondition(match, { checkTasks = true })` — the kill, ejection, and disconnect paths in `server/index.js` now all call it with `checkTasks: false`, so the `allDone` branch is only ever reachable from the actual `TASK_COMPLETE` handler. A death can still change the *parity* outcome (as it always could), but it can never by itself complete the task-win condition. Verified with two real 4-player smoke tests: killing the laggard *after* the survivors finish no longer ends the match, while the survivors' own subsequent task completions still can.
 **Prevents:** Filtering a dead entity out of a shared aggregate (a count, a total, a "still pending" set) can silently turn "removing someone from consideration" into "counting as done" if the code path that reacts to the aggregate crossing a threshold doesn't distinguish *why* it changed. When an aggregate can change because of two different kinds of event (a completion vs. a removal), gate which event types are allowed to trigger the downstream consequence, rather than trusting the aggregate's current value alone.
+
+### L-012: Drawing a corridor as "a straight line between two centers" only works when every connection happens to be cardinal (2026-08-02)
+
+**Context:** The user reported the map had holes in the floor and rooms with "shapes that don't make sense." `skeldMap.js`'s original corridor builder computed the exact point where a straight line between two room centers crosses each room's own rectangular boundary, then drew a single box between those two points, rotated to match the line's angle.
+**Problem:** An advisor review traced this precisely on real data: for `cafeteria→storage` (a diagonal pair), the corridor's near edge is a tilted line crossing through the boundary-exit point, but the room's floor ends at a straight, axis-aligned line - the wedge of ground between the tilted edge and the straight edge belongs to neither, leaving an unfloored gap the player falls through (caught by `FALL_RESPAWN_Y`, which is why it read as "falls into the void" rather than a visible crash). Separately, the wall gap cut for the corridor was always exactly `CORRIDOR_WIDTH` wide, but a corridor meeting the wall at an angle needs a *wider* opening (`CORRIDOR_WIDTH / cos(angle)`) to actually admit its own width - so the leftover wall stub intruded into the corridor mouth at an angle, which is the "shape that doesn't make sense." Of this layout's 24 room-to-room connections, 12 are diagonal - this wasn't an edge case, it was most of the map. One connection (`upperEngine`-`reactor`) had a second, independent problem: the two rooms sit in a straight line with `lowerEngine` physically between them, so even a "fixed" straight corridor would tunnel through a third room's walls.
+**Solution:** Rewrote corridor generation from "derive a line between centers" to "author a rectilinear route and build only axis-aligned geometry from it" (`shared/corridorRouting.js`, new, pure/unit-tested). Each connection resolves to a chain of waypoints via a 4-directional grid BFS that treats every *other* room (padded by half the corridor width) as a blocked obstacle - so a path that would cut through a third room automatically detours around it instead. `upperEngine-reactor` needed a manual override (the BFS solution was valid but a hand-picked route reads more sensibly) - see `CORRIDOR_OVERRIDES` in `skeldMap.js`. Every wall gap and corridor segment is now built from a coordinate that's guaranteed axis-aligned, so gap width always exactly matches corridor width with no trig involved. Verified two ways: unit tests assert every corridor segment is axis-aligned, boundary-exact, and clips no third room; a throwaway script then walked every corridor's centerline in 5%-steps and confirmed floor coverage at every sampled point (0 gaps found, previously would have found several).
+**Prevents:** A geometry generator derived from "the straight line between two reference points" is only correct if every pair of reference points is guaranteed to be cardinally aligned - check that invariant against the *actual* data (not just a couple of example pairs) before trusting a rotated/derived shape to fit a hand-authored, axis-aligned counterpart (room floors/walls, in this case). When it doesn't hold for a meaningful fraction of the data, author the route (or synthesize it with a real pathfinder) instead of deriving it from raw endpoints.
 
 ---
 

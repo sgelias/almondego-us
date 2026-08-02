@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { TASK_LOCATIONS } from './taskPool.js'
-import { ROOM_LAYOUT } from '../src/map/skeldRooms.js'
+import { ROOM_LAYOUT } from './skeldRooms.js'
 
 test('exactly 5 task locations with unique ids', () => {
   assert.equal(TASK_LOCATIONS.length, 5)
