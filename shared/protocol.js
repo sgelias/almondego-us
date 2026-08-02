@@ -28,6 +28,11 @@ export const MESSAGE_TYPE = {
   // A human is mid-quiz; the server pauses bot simulation while any player
   // is (see AD-009).
   BUSY: 'busy',
+  // Ship emergencies.
+  EVENT_STARTED: 'eventStarted',
+  EVENT_PANEL: 'eventPanel',
+  EVENT_ENDED: 'eventEnded',
+  ARM_PANEL: 'armPanel',
 }
 
 const KNOWN_TYPES = new Set(Object.values(MESSAGE_TYPE))

@@ -23,7 +23,7 @@ function ventPosition(ventId) {
 //
 // `hooks` lets the bot layer observe events it could plausibly witness
 // (kills, vents) without this module having to know bots exist.
-export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToAll, sendToPlayer, isBusy = () => false, hooks = {} }) {
+export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToAll, sendToPlayer, isBusy = () => false, armPanel = () => false, hooks = {} }) {
   let meetingTimer = null
 
   // checkTasks: false for every path triggered by a death (kill/ejection/
@@ -231,6 +231,7 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
     doTaskStep,
     doAttack,
     doCastSpell,
+    armPanel,
     doCallMeeting,
     doVote,
     doVent,

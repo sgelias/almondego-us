@@ -17,6 +17,8 @@ import { createHealthUI } from './game/healthUI.js'
 import { createSpellUI } from './game/spellUI.js'
 import { createTaskGuide } from './game/taskGuide.js'
 import { createCarryUI } from './game/carryUI.js'
+import { createEventUI } from './game/eventUI.js'
+import { getEventById, panelPosition } from '../shared/eventPool.js'
 import { ROOM_LABELS } from './ui/minimap.js'
 import { getSpellById } from '../shared/spellPool.js'
 import { createTaskQuiz, WRONG_ANSWER_LOCKOUT_MS } from './game/taskQuiz.js'
@@ -135,6 +137,14 @@ function getPromptText(target) {
   if (kind === 'vent') {
     return localRole === 'impostor' ? 'Pressione E para usar o duto' : null
   }
+  if (kind === 'eventPanel') {
+    // Inert unless its own emergency is running and this panel still needs
+    // someone; impostors get no prompt because the server refuses them.
+    if (!activeEvent || target.userData.eventId !== activeEvent.eventId) return null
+    if (!pendingPanelIds.has(target.userData.panelId)) return 'Painel acionado'
+    if (localRole !== 'crewmate') return null
+    return 'Pressione E para acionar o painel'
+  }
   if (kind === 'emergencyButton') {
     return 'Pressione E para chamar reunião'
   }
@@ -157,6 +167,7 @@ const healthUI = createHealthUI()
 const spellUI = createSpellUI()
 const taskGuide = createTaskGuide(scene, camera)
 const carryUI = createCarryUI()
+const eventUI = createEventUI()
 const minimap = createMinimap(ROOM_LAYOUT, SKELD_CORRIDORS, { corridorWidth: CORRIDOR_WIDTH })
 minimap.mount()
 const ventTransition = createVentTransition()
@@ -179,6 +190,10 @@ let localAlive = true
 let localMaxHealth = 3
 // Radar reveals every player on the map until this timestamp.
 let radarUntil = 0
+// The running ship emergency, if any. Its vision radius overrides the normal
+// one, which is what makes a blackout actually dark rather than just loud.
+let activeEvent = null
+const pendingPanelIds = new Set()
 let isHost = false
 let deathNotice = null
 let gameOverScreen = null
@@ -246,6 +261,15 @@ function showDeathNotice() {
 // from - so a guide arrow can never point somewhere the console is not.
 // Arrows point at the step you are due at next, so a fetch task guides you
 // to the pickup first and only then to where it is used.
+// A blackout collapses vision for everyone, bots included (botRunner reads
+// the same value server-side) - otherwise it would only handicap humans.
+function currentVisionRadius() {
+  // Impostors keep their eyes in a blackout. That asymmetry is the point of
+  // cutting the lights, and botRunner applies the same rule server-side.
+  if (localRole === 'impostor') return VISION_RADIUS
+  return getEventById(activeEvent?.eventId)?.visionRadius ?? VISION_RADIUS
+}
+
 function refreshTaskGuide() {
   if (localRole !== 'crewmate') {
     taskGuide.clear()
@@ -253,6 +277,14 @@ function refreshTaskGuide() {
     return
   }
   const targets = []
+  // An emergency outranks tasks: while one runs, the arrows point at its
+  // panels instead, or the player has no idea where to go for it.
+  for (const panelId of pendingPanelIds) {
+    const position = panelPosition(ROOM_LAYOUT, panelId)
+    if (!position) continue
+    const roomId = getEventById(activeEvent?.eventId)?.panels.find((p) => p.id === panelId)?.roomId
+    targets.push({ taskId: panelId, position, roomName: ROOM_LABELS[roomId] ?? 'Emergência' })
+  }
   for (const task of TASK_LOCATIONS) {
     if (!assignedTaskIds.has(task.id) || completedTaskIds.has(task.id)) continue
     const stepIndex = taskStepById.get(task.id) ?? 0
@@ -345,6 +377,10 @@ function handleInteractPress() {
     doTaskStep(target.userData.taskId, target.userData.stepIndex)
   } else if (kind === 'vent' && localRole === 'impostor') {
     netClient.send(MESSAGE_TYPE.VENT, { ventId: target.userData.ventId })
+  } else if (kind === 'eventPanel') {
+    if (activeEvent && target.userData.eventId === activeEvent.eventId) {
+      netClient.send(MESSAGE_TYPE.ARM_PANEL, { panelId: target.userData.panelId })
+    }
   } else if (kind === 'emergencyButton') {
     netClient.send(MESSAGE_TYPE.CALL_MEETING, {})
   } else if (kind === 'player' && localRole === 'impostor') {
@@ -459,6 +495,30 @@ function connect(url, name, lobby) {
       const step = getTaskById(msg.taskId)?.steps[msg.step - 1]
       carryUI.set(step?.carrying ?? null)
     }
+    refreshTaskGuide()
+  })
+
+  netClient.on(MESSAGE_TYPE.EVENT_STARTED, (msg) => {
+    activeEvent = msg
+    pendingPanelIds.clear()
+    for (const panelId of msg.panelIds) pendingPanelIds.add(panelId)
+    eventUI.show(msg)
+    sfx.meeting()
+    refreshTaskGuide()
+  })
+
+  netClient.on(MESSAGE_TYPE.EVENT_PANEL, (msg) => {
+    pendingPanelIds.delete(msg.panelId)
+    sfx.taskProgress()
+    refreshTaskGuide()
+  })
+
+  netClient.on(MESSAGE_TYPE.EVENT_ENDED, (msg) => {
+    const name = getEventById(msg.eventId)?.name ?? 'Emergência'
+    activeEvent = null
+    pendingPanelIds.clear()
+    eventUI.showOutcome(name, msg.fixed)
+    if (msg.fixed) sfx.win()
     refreshTaskGuide()
   })
 
@@ -649,6 +709,9 @@ function resetForNewMatch() {
   taskQuiz.cancel()
   minimap.hide()
   meetingUI.hide()
+  eventUI.hide()
+  activeEvent = null
+  pendingPanelIds.clear()
   roleUI.reset()
   busyReasons.clear()
   netClient?.send(MESSAGE_TYPE.BUSY, { busy: false })
@@ -689,13 +752,22 @@ function startGame(lobby) {
     const radarActive = Date.now() < radarUntil
     const mapMarkers = []
     remotePlayers.applyVisibility((id, position) => {
-      const seen = navGraph.canSee(camera.position.x, camera.position.z, position.x, position.z, VISION_RADIUS)
+      const seen = navGraph.canSee(camera.position.x, camera.position.z, position.x, position.z, currentVisionRadius())
       if (seen || radarActive) {
         mapMarkers.push({ x: position.x, z: position.z, colorIndex: roster.get(id)?.colorIndex, faded: !seen })
       }
       return seen
     })
     minimap.render(camera.position, roster.get(localPlayerId)?.colorIndex, mapMarkers)
+
+    // Actually make it dark. Without this the "blackout" would only shorten
+    // the vision rule while the room stayed brightly lit, which reads as a
+    // bug rather than a power cut.
+    const blackout = localRole !== 'impostor' && Boolean(getEventById(activeEvent?.eventId)?.visionRadius)
+    hemiLight.intensity = blackout ? 0.12 : 1.1
+    dirLight.intensity = blackout ? 0.05 : 0.55
+    scene.fog.near = blackout ? 1 : 18
+    scene.fog.far = blackout ? 9 : 60
     interactSystem.update()
     taskGuide.update(clock.elapsedTime)
 

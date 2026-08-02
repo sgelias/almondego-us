@@ -3,6 +3,7 @@ import { ROOM_LAYOUT } from '../../shared/skeldRooms.js'
 import { CORRIDOR_WIDTH, SKELD_CORRIDORS } from '../../shared/skeldCorridors.js'
 import { TASK_LOCATIONS, stepPosition } from '../../shared/taskPool.js'
 import { VENT_LOCATIONS } from '../../shared/ventPool.js'
+import { SHIP_EVENTS, panelPosition } from '../../shared/eventPool.js'
 import { addRoomProps } from './roomProps.js'
 import { TEXTURES, applyBoxUvScale } from './textures.js'
 
@@ -440,6 +441,40 @@ function addVentMarkers(group) {
 }
 
 // A pedestal with a big red dome on top - unmistakable across the cafeteria.
+const PANEL_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0xff9d3c,
+  emissive: 0xc25a00,
+  emissiveIntensity: 0.8,
+})
+
+// Emergency panels live on the map permanently. They only respond while
+// their event is running - spawning and despawning meshes mid-match would
+// mean touching the scene graph (and the interactable list) from a network
+// handler, which is a far larger surface than a mesh that is simply inert
+// most of the time.
+function addEventPanels(group) {
+  const meshes = []
+  for (const event of SHIP_EVENTS) {
+    for (const panel of event.panels) {
+      const [x, y, z] = panelPosition(ROOM_LAYOUT, panel.id)
+      const userData = { interactable: true, kind: 'eventPanel', panelId: panel.id, eventId: event.id }
+
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.2, 0.5), CONSOLE_BODY_MATERIAL)
+      post.position.set(x, y + 0.6, z)
+      post.userData = userData
+      group.add(post)
+
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), PANEL_MATERIAL)
+      lamp.position.set(x, y + 1.45, z)
+      lamp.userData = userData
+      group.add(lamp)
+
+      meshes.push(post, lamp)
+    }
+  }
+  return meshes
+}
+
 function addEmergencyButton(group) {
   const [x, y, z] = roomPosition('cafeteria', [0, 0, -3])
   const userData = { interactable: true, kind: 'emergencyButton' }
@@ -498,6 +533,7 @@ export function buildSkeldMap() {
   const taskMeshes = addTaskMarkers(decor)
   const ventMeshes = addVentMarkers(decor)
   const emergencyButton = addEmergencyButton(decor)
+  const panelMeshes = addEventPanels(decor)
 
   const cafeteria = ROOM_LAYOUT.find((room) => room.id === 'cafeteria')
   const spawnPoint = new THREE.Vector3(cafeteria.center[0], 1, cafeteria.center[2])
@@ -508,6 +544,6 @@ export function buildSkeldMap() {
     // the collision structure.
     collisionGroup: collision,
     spawnPoint,
-    interactables: [...taskMeshes, ...ventMeshes, emergencyButton],
+    interactables: [...taskMeshes, ...ventMeshes, ...panelMeshes, emergencyButton],
   }
 }

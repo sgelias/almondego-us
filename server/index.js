@@ -5,6 +5,8 @@ import { MESSAGE_TYPE, isKnownMessageType } from '../shared/protocol.js'
 import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
 import { createGameActions } from './gameActions.js'
 import { createBotRunner } from './botRunner.js'
+import { createShipEvents } from './shipEvents.js'
+import * as gameState from './gameState.js'
 
 const PORT = process.env.PORT || 8080
 // 1, not 3: empty slots are filled with bots up to TARGET_PLAYER_COUNT, so a
@@ -111,13 +113,37 @@ const gameActions = createGameActions({
   broadcastToAll,
   sendToPlayer,
   isBusy: (playerId) => busyPlayers.has(playerId),
+  // Bots arm panels through the same call the socket handler uses.
+  armPanel: (playerId, panelId) => shipEvents.armPanel(playerId, panelId),
   hooks: {
     onAttack: (attackerId, victimId, died) => botRunner?.hooks.onAttack(attackerId, victimId, died),
     onSpellCast: (playerId, spellId, position) => botRunner?.hooks.onSpellCast(playerId, spellId, position),
     onVent: (playerId) => botRunner?.hooks.onVent(playerId),
-    onMeetingStarted: (info) => botRunner?.hooks.onMeetingStarted(info),
+    onMeetingStarted: (info) => {
+      // An alarm blaring through a meeting nobody can leave is just noise.
+      shipEvents.cancel()
+      botRunner?.hooks.onMeetingStarted(info)
+    },
     onMeetingEnded: () => botRunner?.hooks.onMeetingEnded(),
-    onGameOver: () => botRunner?.hooks.onGameOver(),
+    onGameOver: () => {
+      shipEvents.stop()
+      botRunner?.hooks.onGameOver()
+    },
+  },
+})
+
+const shipEvents = createShipEvents({
+  getMatch: () => match,
+  broadcastToAll,
+  onStarted: () => botRunner?.hooks.onEventStarted(),
+  onHealAll: () => {
+    if (!match) return
+    gameState.healAll(match)
+    // Everyone's over-head hearts have to be told, or the map would show
+    // damage that no longer exists.
+    for (const id of match.alive) {
+      broadcastToAll(MESSAGE_TYPE.PLAYER_HURT, { id, health: gameState.getHealth(match, id) })
+    }
   },
 })
 
@@ -126,6 +152,7 @@ botRunner = createBotRunner({
   getMatch: () => match,
   getPlayers: () => players,
   getHumanPositions: () => humanPositions,
+  shipEvents,
   broadcastState: (id, position, rotationY, seq) => {
     broadcastToAll(MESSAGE_TYPE.STATE, { id, position, rotationY, seq })
   },
@@ -149,6 +176,7 @@ function startMatch(socket, requestedImpostors) {
   if (socket.playerId !== hostId) return
   gameActions.cancelTimers()
   botRunner.stop()
+  shipEvents.stop()
 
   // Drop any bots left over from a previous match before counting humans.
   // Broadcasting the removal matters for "play again": without it every
@@ -185,6 +213,7 @@ function startMatch(socket, requestedImpostors) {
   broadcastToAll(MESSAGE_TYPE.START, {})
   gameActions.startMatch([...players.keys()], { impostorCount })
   botRunner.start()
+  shipEvents.startScheduling()
   syncBotPause()
 }
 
@@ -267,6 +296,10 @@ wss.on('connection', (socket) => {
 
       case MESSAGE_TYPE.VENT:
         gameActions.doVent(socket.playerId, message.ventId)
+        return
+
+      case MESSAGE_TYPE.ARM_PANEL:
+        shipEvents.armPanel(socket.playerId, message.panelId)
         return
 
       case MESSAGE_TYPE.BUSY: {

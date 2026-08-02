@@ -105,6 +105,12 @@ export function damage(match, playerId) {
   return { health: 0, died: true }
 }
 
+// Restores every living player to full. Goes through the same health map as
+// damage() so there is still exactly one place health lives.
+export function healAll(match) {
+  for (const id of match.alive) match.health.set(id, MAX_HEALTH)
+}
+
 export function getRole(match, playerId) {
   return match.impostorIds.has(playerId) ? 'impostor' : 'crewmate'
 }

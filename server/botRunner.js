@@ -4,6 +4,7 @@ import { SKELD_CORRIDORS } from '../shared/skeldCorridors.js'
 import { TASK_LOCATIONS, getTaskById } from '../shared/taskPool.js'
 import { VENT_LOCATIONS } from '../shared/ventPool.js'
 import { getSpellById } from '../shared/spellPool.js'
+import { getPanel } from '../shared/eventPool.js'
 import { createBotBrain } from './botBrain.js'
 import * as gameState from './gameState.js'
 
@@ -35,6 +36,12 @@ const OPENING_KILL_GRACE_MS = 15000
 const VENT_COOLDOWN_MS = 25000
 const VENT_CHANCE_PER_TICK = 0.02
 const TASK_HOLD_SECONDS = 2
+// Bots do not react to an alarm instantly. Without this a bot standing near
+// the panel resolved a blackout in about one second - the human never even
+// saw the lights go out. A randomised delay per bot also means they trickle
+// in rather than arriving as a block.
+const EVENT_REACTION_MIN_SECONDS = 4
+const EVENT_REACTION_MAX_SECONDS = 16
 
 const BOT_NAMES = ['Rex', 'Nina', 'Caio', 'Duda', 'Théo', 'Alice', 'Bruno', 'Lia']
 
@@ -42,7 +49,7 @@ function distance2D(a, b) {
   return Math.hypot(a[0] - b[0], a[2] - b[2])
 }
 
-export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPositions, broadcastState, randomFn = Math.random }) {
+export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPositions, broadcastState, shipEvents = null, randomFn = Math.random }) {
   const nav = createNavGraph(ROOM_LAYOUT, SKELD_CORRIDORS)
   const bots = new Map()
   let tickTimer = null
@@ -73,6 +80,8 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
         completedTaskIds: new Set(),
         goalTaskId: null,
         goalStepIndex: null,
+        eventPanelId: null,
+        eventReactAt: 0,
         taskHoldRemaining: 0,
         nextKillAllowedAt: 0,
         nextAttackAllowedAt: 0,
@@ -104,15 +113,25 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
   // shared/navGraph so the client's limited-vision rendering uses the exact
   // same rule: a bot and a human standing in the same spot must see the same
   // set of people.
-  function canSee(fromPosition, toPosition) {
-    return nav.canSee(fromPosition[0], fromPosition[2], toPosition[0], toPosition[2], SENSE_RADIUS)
+  // A blackout blinds the CREW, not the impostors. That asymmetry is the
+  // whole point of cutting the lights: it turns a nuisance into a hunt.
+  // Applied to bots exactly as the client applies it to the human, so
+  // neither side gets an advantage from which body they happen to be in.
+  function senseRadius(viewerId) {
+    const match = getMatch()
+    if (!match || gameState.getRole(match, viewerId) === 'impostor') return SENSE_RADIUS
+    return shipEvents?.currentVisionRadius() ?? SENSE_RADIUS
+  }
+
+  function canSee(fromPosition, toPosition, viewerId) {
+    return nav.canSee(fromPosition[0], fromPosition[2], toPosition[0], toPosition[2], senseRadius(viewerId))
   }
 
   function playersNear(position, positions, excludeId) {
     const near = []
     for (const [id, other] of positions) {
       if (id === excludeId) continue
-      if (canSee(position, other)) near.push(id)
+      if (canSee(position, other, excludeId)) near.push(id)
     }
     return near
   }
@@ -174,7 +193,51 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     return { taskId, stepIndex, step }
   }
 
-  function stepCrewmate(bot, match, deltaSeconds) {
+  // An emergency outranks tasks: a crewmate bot that kept calmly doing sums
+  // through a blackout would make the event feel like set dressing.
+  function pendingEventPanel(bot) {
+    const pending = shipEvents?.pendingPanelIds() ?? []
+    if (pending.length === 0) return null
+    // Head for the nearest one, so two bots naturally split across the two
+    // rooms of the two-person event rather than both taking the same panel.
+    let best = null
+    let bestDistance = Infinity
+    for (const panelId of pending) {
+      const found = getPanel(panelId)
+      if (!found) continue
+      const room = ROOM_LAYOUT.find((r) => r.id === found.panel.roomId)
+      if (!room) continue
+      const distance = distance2D(bot.position, [room.center[0], 0, room.center[2]])
+      if (distance < bestDistance) {
+        bestDistance = distance
+        best = { panelId, panel: found.panel }
+      }
+    }
+    return best
+  }
+
+  function stepEventResponse(bot, deltaSeconds, now) {
+    if (now < bot.eventReactAt) return false
+    const objective = pendingEventPanel(bot)
+    if (!objective) return false
+
+    if (bot.eventPanelId !== objective.panelId) {
+      bot.eventPanelId = objective.panelId
+      setPath(bot, objective.panel.roomId, objective.panel.offset)
+    }
+
+    const arrived = advanceAlongPath(bot, WALK_SPEED * deltaSeconds)
+    if (arrived) {
+      gameActions.armPanel?.(bot.id, objective.panelId)
+      bot.eventPanelId = null
+      bot.path = null
+    }
+    return true
+  }
+
+  function stepCrewmate(bot, match, deltaSeconds, now) {
+    if (bot.taskHoldRemaining <= 0 && stepEventResponse(bot, deltaSeconds, now)) return
+
     if (bot.taskHoldRemaining > 0) {
       bot.taskHoldRemaining -= deltaSeconds
       if (bot.taskHoldRemaining <= 0 && bot.goalTaskId) {
@@ -334,7 +397,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
         if (gameState.getRole(match, bot.id) === 'impostor') {
           stepImpostor(bot, match, deltaSeconds, positions, now)
         } else {
-          stepCrewmate(bot, match, deltaSeconds)
+          stepCrewmate(bot, match, deltaSeconds, now)
         }
 
         broadcastState(bot.id, [bot.position[0], EYE_HEIGHT, bot.position[2]], bot.rotationY, seq)
@@ -357,7 +420,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     if (!origin) return
     for (const bot of bots.values()) {
       if (bot.id === originId) continue
-      if (!canSee(bot.position, origin)) continue
+      if (!canSee(bot.position, origin, bot.id)) continue
       notify(bot, nav.roomIdAt(origin[0], origin[2]))
     }
   }
@@ -373,6 +436,16 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
 
   // Blinds every bot that could see the caster - the same line-of-sight rule
   // used everywhere else, so a bot behind a wall is unaffected.
+  // Each bot decides for itself how long it takes to notice the alarm.
+  function onEventStarted() {
+    const now = Date.now()
+    for (const bot of bots.values()) {
+      const spread = EVENT_REACTION_MAX_SECONDS - EVENT_REACTION_MIN_SECONDS
+      bot.eventReactAt = now + (EVENT_REACTION_MIN_SECONDS + randomFn() * spread) * 1000
+      bot.eventPanelId = null
+    }
+  }
+
   function onSpellCast(playerId, spellId, position) {
     if (spellId !== 'clarao' || !position) return
     const spell = getSpellById('clarao')
@@ -487,6 +560,6 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     isBot,
     setPaused,
     teleportBot,
-    hooks: { onAttack, onSpellCast, onVent, onMeetingStarted, onMeetingEnded, onGameOver: () => stop() },
+    hooks: { onAttack, onSpellCast, onEventStarted, onVent, onMeetingStarted, onMeetingEnded, onGameOver: () => stop() },
   }
 }
