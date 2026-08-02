@@ -19,8 +19,10 @@ import {
   canUseSpell,
   useSpell,
   getSpell,
+  advanceTaskStep,
+  currentStep,
 } from './gameState.js'
-import { TASK_LOCATIONS } from '../shared/taskPool.js'
+import { TASK_LOCATIONS, stepCount } from '../shared/taskPool.js'
 import { SPELLS } from '../shared/spellPool.js'
 
 // Deterministic seeded PRNG so tests never flake, without relying on Math.random.
@@ -396,4 +398,74 @@ test('a new match deals fresh spells and fresh charges', () => {
 
   const second = createMatch(ids, seededRandom(3))
   assert.equal(canUseSpell(second, crew), true)
+})
+
+// --- multi-step tasks ---
+
+test('a one-step task completes on its first advance', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const match = createMatch(ids, seededRandom(3))
+  const crew = ids.find((id) => getRole(match, id) === 'crewmate')
+  const single = getAssignedTasks(match, crew).find((id) => stepCount(id) === 1)
+  if (!single) return // this crewmate happened to draw only multi-step tasks
+
+  const result = advanceTaskStep(match, crew, single)
+  assert.equal(result.completed, true)
+  assert.equal(currentStep(match, crew, single), stepCount(single))
+})
+
+test('a two-step task needs both steps, in order', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+  const match = createMatch(ids, seededRandom(11))
+  const crew = ids.filter((id) => getRole(match, id) === 'crewmate')
+  // Force a known two-step task onto a crewmate so the test never depends on
+  // the random deal.
+  const victim = crew[0]
+  match.tasksByPlayer.set(victim, [{ taskId: 'fuse-storage-electrical', done: false }])
+
+  assert.equal(currentStep(match, victim, 'fuse-storage-electrical'), 0)
+
+  const first = advanceTaskStep(match, victim, 'fuse-storage-electrical')
+  assert.equal(first.completed, false, 'the pickup must not complete the task')
+  assert.equal(first.step, 1)
+  assert.equal(currentStep(match, victim, 'fuse-storage-electrical'), 1)
+
+  const second = advanceTaskStep(match, victim, 'fuse-storage-electrical')
+  assert.equal(second.completed, true)
+})
+
+test('advancing a task that is not yours does nothing', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const match = createMatch(ids, seededRandom(3))
+  const crew = ids.find((id) => getRole(match, id) === 'crewmate')
+  const notMine = TASK_LOCATIONS.map((t) => t.id).find((id) => !getAssignedTasks(match, crew).includes(id))
+  if (!notMine) return
+
+  const result = advanceTaskStep(match, crew, notMine)
+  assert.equal(result.completed, false)
+  assert.equal(result.step, null, 'an unassigned task must not gain progress')
+})
+
+test('a completed task cannot be advanced again', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+  const match = createMatch(ids, seededRandom(11))
+  const victim = ids.find((id) => getRole(match, id) === 'crewmate')
+  match.tasksByPlayer.set(victim, [{ taskId: 'wiring-electrical', done: false }])
+
+  assert.equal(advanceTaskStep(match, victim, 'wiring-electrical').completed, true)
+  const again = advanceTaskStep(match, victim, 'wiring-electrical')
+  assert.equal(again.completed, false)
+  assert.equal(again.step, null)
+})
+
+test('two crewmates progress the same task independently', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+  const match = createMatch(ids, seededRandom(11))
+  const crew = ids.filter((id) => getRole(match, id) === 'crewmate')
+  const [one, two] = crew
+  for (const id of [one, two]) match.tasksByPlayer.set(id, [{ taskId: 'fuse-storage-electrical', done: false }])
+
+  advanceTaskStep(match, one, 'fuse-storage-electrical')
+  assert.equal(currentStep(match, one, 'fuse-storage-electrical'), 1)
+  assert.equal(currentStep(match, two, 'fuse-storage-electrical'), 0, "one player's progress leaked to another")
 })

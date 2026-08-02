@@ -110,6 +110,7 @@ const gameActions = createGameActions({
   getPlayers: () => players,
   broadcastToAll,
   sendToPlayer,
+  isBusy: (playerId) => busyPlayers.has(playerId),
   hooks: {
     onAttack: (attackerId, victimId, died) => botRunner?.hooks.onAttack(attackerId, victimId, died),
     onSpellCast: (playerId, spellId, position) => botRunner?.hooks.onSpellCast(playerId, spellId, position),
@@ -240,7 +241,7 @@ wss.on('connection', (socket) => {
         return
 
       case MESSAGE_TYPE.TASK_COMPLETE:
-        gameActions.doTaskComplete(socket.playerId, message.taskId)
+        gameActions.doTaskStep(socket.playerId, message.taskId)
         return
 
       case MESSAGE_TYPE.CAST_SPELL: {

@@ -146,11 +146,15 @@ test('a path starting mid-corridor walks the corridor out instead of cutting thr
   }
 })
 
-test('a path to a task offset stays walkable all the way to the console', () => {
+test('a path to every task step stays walkable all the way to the console', () => {
+  // Every step, not every task: a fetch task sends the player to two rooms
+  // and the second leg is just as capable of being unreachable.
   for (const task of TASK_LOCATIONS) {
-    const points = nav.waypointsTo(nav.roomCenter('cafeteria'), task.roomId, task.offset)
-    assert.ok(points, `no path to task ${task.id}`)
-    assertPathWalkable(points, `task ${task.id}`)
+    for (const [index, step] of task.steps.entries()) {
+      const points = nav.waypointsTo(nav.roomCenter('cafeteria'), step.roomId, step.offset)
+      assert.ok(points, `no path to ${task.id} step ${index}`)
+      assertPathWalkable(points, `${task.id} step ${index}`)
+    }
   }
 })
 

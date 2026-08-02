@@ -23,7 +23,7 @@ function ventPosition(ventId) {
 //
 // `hooks` lets the bot layer observe events it could plausibly witness
 // (kills, vents) without this module having to know bots exist.
-export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToAll, sendToPlayer, hooks = {} }) {
+export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToAll, sendToPlayer, isBusy = () => false, hooks = {} }) {
   let meetingTimer = null
 
   // checkTasks: false for every path triggered by a death (kill/ejection/
@@ -75,17 +75,27 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
     return match
   }
 
-  function doTaskComplete(playerId, taskId) {
+  // A task is a chain of steps. Every press advances one; only the last one
+  // finishes the task and can move the win condition. Intermediate steps
+  // deliberately broadcast nothing global - a player carrying a fuse across
+  // the ship has not made progress the crew can count yet.
+  function doTaskStep(playerId, taskId) {
     const match = getMatch()
-    if (!match || match.phase !== 'playing') return false
-    if (!playerId || !gameState.isAlive(match, playerId)) return false
-    if (gameState.getRole(match, playerId) !== 'crewmate') return false
-    if (!gameState.getAssignedTasks(match, playerId).includes(taskId)) return false
+    if (!match || match.phase !== 'playing') return null
+    if (!playerId || !gameState.isAlive(match, playerId)) return null
+    if (gameState.getRole(match, playerId) !== 'crewmate') return null
+    if (!gameState.getAssignedTasks(match, playerId).includes(taskId)) return null
+
+    const { step, completed } = gameState.advanceTaskStep(match, playerId, taskId)
+    if (step === null) return null
+
+    sendToPlayer(playerId, MESSAGE_TYPE.TASK_STEP, { taskId, step, completed })
+    if (!completed) return { step, completed }
 
     const progress = gameState.completeTask(match, playerId, taskId)
     broadcastToAll(MESSAGE_TYPE.TASKS_PROGRESS, { completed: progress.completed, total: progress.total })
     checkAndBroadcastWin(true)
-    return true
+    return { step, completed }
   }
 
   // One hit, not one kill. Only the blow that empties the health bar ends a
@@ -99,6 +109,10 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
     if (targetId === playerId || !gameState.isAlive(match, targetId)) return false
     // Impostors cannot attack each other.
     if (gameState.getRole(match, targetId) === 'impostor') return false
+    // Nor can anyone be hit while a blocking screen is up on their end - a
+    // meeting result, the game-over screen, a task question, the map. They
+    // cannot see or react through it, so a hit there is not a fair kill.
+    if (isBusy(targetId)) return false
 
     const { health, died } = gameState.damage(match, targetId)
     // Broadcast to everyone: health is shown above every player's head, so
@@ -214,7 +228,7 @@ export function createGameActions({ getMatch, setMatch, getPlayers, broadcastToA
   return {
     isAlive,
     startMatch,
-    doTaskComplete,
+    doTaskStep,
     doAttack,
     doCastSpell,
     doCallMeeting,

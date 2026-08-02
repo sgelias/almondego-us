@@ -1,7 +1,7 @@
 import { createNavGraph } from '../shared/navGraph.js'
 import { ROOM_LAYOUT } from '../shared/skeldRooms.js'
 import { SKELD_CORRIDORS } from '../shared/skeldCorridors.js'
-import { TASK_LOCATIONS } from '../shared/taskPool.js'
+import { TASK_LOCATIONS, getTaskById } from '../shared/taskPool.js'
 import { VENT_LOCATIONS } from '../shared/ventPool.js'
 import { getSpellById } from '../shared/spellPool.js'
 import { createBotBrain } from './botBrain.js'
@@ -72,6 +72,7 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
         brain: createBotBrain(id, randomFn),
         completedTaskIds: new Set(),
         goalTaskId: null,
+        goalStepIndex: null,
         taskHoldRemaining: 0,
         nextKillAllowedAt: 0,
         nextAttackAllowedAt: 0,
@@ -160,20 +161,27 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     setPath(bot, next, null)
   }
 
-  function nextIncompleteTask(bot, match) {
+  // The bot's current objective is a *step*, not a task: a fetch task sends
+  // it to one room and then another, exactly like a human.
+  function nextIncompleteStep(bot, match) {
     const assigned = gameState.getAssignedTasks(match, bot.id)
-    const remaining = assigned.filter((taskId) => !bot.completedTaskIds.has(taskId))
-    if (remaining.length === 0) return null
-    return TASK_LOCATIONS.find((task) => task.id === remaining[0]) ?? null
+    const taskId = assigned.find((id) => !bot.completedTaskIds.has(id))
+    if (!taskId) return null
+    const task = getTaskById(taskId)
+    const stepIndex = gameState.currentStep(match, bot.id, taskId) ?? 0
+    const step = task?.steps[stepIndex]
+    if (!step) return null
+    return { taskId, stepIndex, step }
   }
 
   function stepCrewmate(bot, match, deltaSeconds) {
     if (bot.taskHoldRemaining > 0) {
       bot.taskHoldRemaining -= deltaSeconds
       if (bot.taskHoldRemaining <= 0 && bot.goalTaskId) {
-        gameActions.doTaskComplete(bot.id, bot.goalTaskId)
-        bot.completedTaskIds.add(bot.goalTaskId)
+        const result = gameActions.doTaskStep(bot.id, bot.goalTaskId)
+        if (result?.completed) bot.completedTaskIds.add(bot.goalTaskId)
         bot.goalTaskId = null
+        bot.goalStepIndex = null
         bot.path = null
       }
       return
@@ -182,20 +190,21 @@ export function createBotRunner({ gameActions, getMatch, getPlayers, getHumanPos
     const arrived = advanceAlongPath(bot, WALK_SPEED * deltaSeconds)
     if (!arrived) return
 
-    const task = nextIncompleteTask(bot, match)
-    if (!task) {
+    const objective = nextIncompleteStep(bot, match)
+    if (!objective) {
       wander(bot)
       return
     }
 
-    if (bot.goalTaskId === task.id) {
-      // Standing on the task - hold it for the same duration a human must.
+    if (bot.goalTaskId === objective.taskId && bot.goalStepIndex === objective.stepIndex) {
+      // Standing on the step - hold it for the same duration a human must.
       bot.taskHoldRemaining = TASK_HOLD_SECONDS
       return
     }
 
-    bot.goalTaskId = task.id
-    setPath(bot, task.roomId, task.offset)
+    bot.goalTaskId = objective.taskId
+    bot.goalStepIndex = objective.stepIndex
+    setPath(bot, objective.step.roomId, objective.step.offset)
   }
 
   function stepImpostor(bot, match, deltaSeconds, positions, now) {

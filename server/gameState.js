@@ -1,4 +1,4 @@
-import { TASK_LOCATIONS } from '../shared/taskPool.js'
+import { TASK_LOCATIONS, stepCount } from '../shared/taskPool.js'
 import { pickSpell } from '../shared/spellPool.js'
 
 const TASKS_PER_CREWMATE = 3
@@ -49,7 +49,7 @@ export function createMatch(playerIds, randomFn, { impostorCount = 1 } = {}) {
   for (const playerId of playerIds) {
     if (impostorIds.has(playerId)) continue
     const assigned = pickRandomSubset(taskIds, TASKS_PER_CREWMATE, randomFn)
-    tasksByPlayer.set(playerId, assigned.map((taskId) => ({ taskId, done: false })))
+    tasksByPlayer.set(playerId, assigned.map((taskId) => ({ taskId, done: false, step: 0 })))
     spellByPlayer.set(playerId, pickSpell(randomFn))
   }
 
@@ -112,6 +112,28 @@ export function getRole(match, playerId) {
 export function getAssignedTasks(match, playerId) {
   const tasks = match.tasksByPlayer.get(playerId)
   return tasks ? tasks.map((task) => task.taskId) : []
+}
+
+// How far a player has got through a task's steps. Progress is per player,
+// not per task: two crewmates can be carrying the same kind of fuse at once.
+export function currentStep(match, playerId, taskId) {
+  const entry = match.tasksByPlayer.get(playerId)?.find((task) => task.taskId === taskId)
+  if (!entry) return null
+  return entry.done ? stepCount(taskId) : (entry.step ?? 0)
+}
+
+// Advances one step. Returns { step, completed }: `step` is null when the
+// advance was refused (not your task, or already finished), so a caller can
+// tell "you moved forward" from "nothing happened" rather than guessing.
+export function advanceTaskStep(match, playerId, taskId) {
+  const entry = match.tasksByPlayer.get(playerId)?.find((task) => task.taskId === taskId)
+  if (!entry || entry.done) return { step: null, completed: false }
+
+  entry.step = (entry.step ?? 0) + 1
+  if (entry.step < stepCount(taskId)) return { step: entry.step, completed: false }
+
+  entry.done = true
+  return { step: entry.step, completed: true }
 }
 
 export function completeTask(match, playerId, taskId) {

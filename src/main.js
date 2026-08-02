@@ -16,10 +16,12 @@ import { createRoleUI } from './game/roleUI.js'
 import { createHealthUI } from './game/healthUI.js'
 import { createSpellUI } from './game/spellUI.js'
 import { createTaskGuide } from './game/taskGuide.js'
+import { createCarryUI } from './game/carryUI.js'
 import { ROOM_LABELS } from './ui/minimap.js'
 import { getSpellById } from '../shared/spellPool.js'
 import { createTaskQuiz, WRONG_ANSWER_LOCKOUT_MS } from './game/taskQuiz.js'
 import { drawTaskQuestion, drawResearchQuestion } from '../shared/questionBank.js'
+import { getTaskById, stepPosition } from '../shared/taskPool.js'
 import { createMeetingUI } from './game/meetingUI.js'
 import { showGameOver } from './game/gameOverScreen.js'
 import { createVentTransition } from './ui/ventTransition.js'
@@ -113,15 +115,22 @@ const remotePlayers = createRemotePlayers(scene)
 // task-completion handlers below.
 const assignedTaskIds = new Set()
 const completedTaskIds = new Set()
+// taskId -> which step this player is on. The server is the authority; this
+// mirror is what the prompt and the guide arrow read every frame.
+const taskStepById = new Map()
 
 function getPromptText(target) {
   const { kind } = target.userData
   if (kind === 'task') {
+    const { taskId, stepIndex } = target.userData
     if (localRole !== 'crewmate') return null
-    if (!assignedTaskIds.has(target.userData.taskId)) return null
-    if (completedTaskIds.has(target.userData.taskId)) return null
-    if (taskLockoutUntil.get(target.userData.taskId) > Date.now()) return 'Console reiniciando…'
-    return 'Pressione E para fazer a tarefa'
+    if (!assignedTaskIds.has(taskId) || completedTaskIds.has(taskId)) return null
+    // A fetch task puts a console in two rooms; only the one you are due at
+    // responds. Otherwise a player could "install the fuse" without ever
+    // fetching it.
+    if ((taskStepById.get(taskId) ?? 0) !== stepIndex) return null
+    if (taskLockoutUntil.get(taskId) > Date.now()) return 'Console reiniciando…'
+    return `Pressione E para ${getTaskById(taskId)?.steps[stepIndex]?.verb ?? 'fazer a tarefa'}`
   }
   if (kind === 'vent') {
     return localRole === 'impostor' ? 'Pressione E para usar o duto' : null
@@ -147,6 +156,7 @@ const roleUI = createRoleUI()
 const healthUI = createHealthUI()
 const spellUI = createSpellUI()
 const taskGuide = createTaskGuide(scene, camera)
+const carryUI = createCarryUI()
 const minimap = createMinimap(ROOM_LAYOUT, SKELD_CORRIDORS, { corridorWidth: CORRIDOR_WIDTH })
 minimap.mount()
 const ventTransition = createVentTransition()
@@ -178,6 +188,22 @@ let gameOverScreen = null
 let meetingTimers = []
 // Suppresses task interaction while a meeting is up or the game has ended.
 let interactionsPaused = false
+
+// Every reason the player currently has a blocking screen in front of them.
+// While this is non-empty the server pauses the bots AND refuses attacks on
+// this player: being killed while staring at a voting screen you cannot act
+// through is not a fair death, it is the game hitting you through a wall of
+// UI. One set rather than a flag per screen, so no overlay can be added
+// later that forgets to protect the player behind it.
+const busyReasons = new Set()
+
+function setBusy(reason, active) {
+  const wasBusy = busyReasons.size > 0
+  if (active) busyReasons.add(reason)
+  else busyReasons.delete(reason)
+  const isBusy = busyReasons.size > 0
+  if (isBusy !== wasBusy) netClient?.send(MESSAGE_TYPE.BUSY, { busy: isBusy })
+}
 // taskId -> timestamp before which that console refuses to reopen, the cost
 // of a wrong answer (AD-008).
 const taskLockoutUntil = new Map()
@@ -218,50 +244,66 @@ function showDeathNotice() {
 // voting UI hit, see STATE.md L-008).
 // Where a task console physically is, from the same data the map is built
 // from - so a guide arrow can never point somewhere the console is not.
-function taskWorldPosition(task) {
-  const room = ROOM_LAYOUT.find((r) => r.id === task.roomId)
-  return [room.center[0] + task.offset[0], 0, room.center[2] + task.offset[2]]
-}
-
+// Arrows point at the step you are due at next, so a fetch task guides you
+// to the pickup first and only then to where it is used.
 function refreshTaskGuide() {
   if (localRole !== 'crewmate') {
     taskGuide.clear()
+    minimap.setTasks([])
     return
   }
-  const targets = TASK_LOCATIONS.filter(
-    (task) => assignedTaskIds.has(task.id) && !completedTaskIds.has(task.id)
-  ).map((task) => ({
-    taskId: task.id,
-    position: taskWorldPosition(task),
-    roomName: ROOM_LABELS[task.roomId] ?? task.roomId,
-  }))
+  const targets = []
+  for (const task of TASK_LOCATIONS) {
+    if (!assignedTaskIds.has(task.id) || completedTaskIds.has(task.id)) continue
+    const stepIndex = taskStepById.get(task.id) ?? 0
+    const step = task.steps[stepIndex]
+    if (!step) continue
+    targets.push({
+      taskId: task.id,
+      position: stepPosition(ROOM_LAYOUT, task.id, stepIndex),
+      roomName: ROOM_LABELS[step.roomId] ?? step.roomId,
+    })
+  }
   taskGuide.setTargets(targets)
   minimap.setTasks(targets.map((t) => ({ x: t.position[0], z: t.position[2] })))
 }
 
-function openTaskQuiz(taskId) {
+// Intermediate steps are a single press - the trip is the content. Only the
+// final step asks the educational question, so a fetch task is not two
+// quizzes.
+function doTaskStep(taskId, stepIndex) {
   if (localRole !== 'crewmate') return
   if (!assignedTaskIds.has(taskId) || completedTaskIds.has(taskId)) return
+  if ((taskStepById.get(taskId) ?? 0) !== stepIndex) return
   if ((taskLockoutUntil.get(taskId) ?? 0) > Date.now()) return
   if (taskQuiz.isOpen()) return
+
+  const task = getTaskById(taskId)
+  const isFinalStep = stepIndex >= task.steps.length - 1
+  if (!isFinalStep) {
+    netClient.send(MESSAGE_TYPE.TASK_COMPLETE, { taskId })
+    sfx.taskProgress()
+    return
+  }
+  openTaskQuiz(taskId)
+}
+
+function openTaskQuiz(taskId) {
 
   player.setFrozen(true)
   document.exitPointerLock()
   // Ask the server to hold the bots while the question is on screen. Being
   // killed part-way through a sum punishes precisely the behaviour the
   // educational tasks exist to encourage (AD-009).
-  netClient.send(MESSAGE_TYPE.BUSY, { busy: true })
+  setBusy('quiz', true)
 
   taskQuiz.show(drawTaskQuestion(Math.random), (result) => {
-    netClient.send(MESSAGE_TYPE.BUSY, { busy: false })
+    setBusy('quiz', false)
     if (!gameEnded && !interactionsPaused) player.setFrozen(false)
 
     if (result === 'correct') {
-      completedTaskIds.add(taskId)
-      sfx.taskDone()
-      roleUI.markTaskDone(taskId)
-      taskGuide.remove(taskId)
-      refreshTaskGuide()
+      // The server confirms via TASK_STEP; the local marks happen there so
+      // the HUD can never claim a task the server refused.
       netClient.send(MESSAGE_TYPE.TASK_COMPLETE, { taskId })
     } else if (result === 'wrong') {
       // The cost of a wrong answer: this console is unusable for a few
@@ -300,7 +342,7 @@ function handleInteractPress() {
 
   const { kind } = target.userData
   if (kind === 'task') {
-    openTaskQuiz(target.userData.taskId)
+    doTaskStep(target.userData.taskId, target.userData.stepIndex)
   } else if (kind === 'vent' && localRole === 'impostor') {
     netClient.send(MESSAGE_TYPE.VENT, { ventId: target.userData.ventId })
   } else if (kind === 'emergencyButton') {
@@ -318,7 +360,7 @@ document.addEventListener('keydown', (event) => {
   if (event.code === 'Tab') {
     // Tab moves focus by default, which would pull it out of the canvas.
     event.preventDefault()
-    if (started) minimap.toggle()
+    if (started) setBusy('map', minimap.toggle())
     return
   }
   if (event.code === 'Escape') {
@@ -399,6 +441,24 @@ function connect(url, name, lobby) {
     roleUI.showRole(msg.role, taskLabelsById, Number.isInteger(myColorIndex) ? colorForIndex(myColorIndex) : null)
 
     taskLockoutUntil.clear()
+    taskStepById.clear()
+    carryUI.set(null)
+    refreshTaskGuide()
+  })
+
+  // The server is the authority on task progress; every local mark happens
+  // here, on its confirmation, rather than optimistically.
+  netClient.on(MESSAGE_TYPE.TASK_STEP, (msg) => {
+    taskStepById.set(msg.taskId, msg.step)
+    if (msg.completed) {
+      completedTaskIds.add(msg.taskId)
+      sfx.taskDone()
+      roleUI.markTaskDone(msg.taskId)
+      carryUI.set(null)
+    } else {
+      const step = getTaskById(msg.taskId)?.steps[msg.step - 1]
+      carryUI.set(step?.carrying ?? null)
+    }
     refreshTaskGuide()
   })
 
@@ -472,6 +532,7 @@ function connect(url, name, lobby) {
   netClient.on(MESSAGE_TYPE.MEETING_STARTED, (msg) => {
     player.setFrozen(true)
     interactionsPaused = true
+    setBusy('meeting', true)
     taskQuiz.cancel()
     minimap.hide()
     // Pointer lock captures the mouse for camera look, so the vote buttons
@@ -504,6 +565,12 @@ function connect(url, name, lobby) {
         meetingUI.hide()
         player.setFrozen(false)
         interactionsPaused = false
+        // Cleared only here, not when the server ends the meeting: the result
+        // screen stays up for several seconds afterwards, and during those
+        // seconds the match is already back to 'playing' and the bots are
+        // moving again. That gap is exactly where players were being killed
+        // behind an overlay they could not see past.
+        setBusy('meeting', false)
       }
     }, MEETING_RESULT_DISPLAY_MS))
   })
@@ -511,6 +578,7 @@ function connect(url, name, lobby) {
   netClient.on(MESSAGE_TYPE.GAME_OVER, (msg) => {
     gameEnded = true
     interactionsPaused = true
+    setBusy('gameover', true)
     player.setFrozen(true)
     document.exitPointerLock()
     meetingUI.hide()
@@ -574,6 +642,7 @@ function resetForNewMatch() {
   assignedTaskIds.clear()
   completedTaskIds.clear()
   taskLockoutUntil.clear()
+  taskStepById.clear()
 
   for (const id of [...roster.keys()]) remotePlayers.remove(id)
 
@@ -581,6 +650,8 @@ function resetForNewMatch() {
   minimap.hide()
   meetingUI.hide()
   roleUI.reset()
+  busyReasons.clear()
+  netClient?.send(MESSAGE_TYPE.BUSY, { busy: false })
   gameOverScreen?.remove()
   gameOverScreen = null
   deathNotice?.remove()

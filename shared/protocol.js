@@ -10,6 +10,8 @@ export const MESSAGE_TYPE = {
   ROLE: 'role',
   TELEPORT: 'teleport',
   TASK_COMPLETE: 'taskComplete',
+  // Server -> the acting player: which step of a task they just advanced to.
+  TASK_STEP: 'taskStep',
   // An attack, not a kill: it takes MAX_HEALTH hits to bring someone down.
   ATTACK: 'attack',
   CALL_MEETING: 'callMeeting',

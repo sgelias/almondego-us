@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { ROOM_LAYOUT } from '../../shared/skeldRooms.js'
 import { CORRIDOR_WIDTH, SKELD_CORRIDORS } from '../../shared/skeldCorridors.js'
-import { TASK_LOCATIONS } from '../../shared/taskPool.js'
+import { TASK_LOCATIONS, stepPosition } from '../../shared/taskPool.js'
 import { VENT_LOCATIONS } from '../../shared/ventPool.js'
 import { addRoomProps } from './roomProps.js'
 import { TEXTURES, applyBoxUvScale } from './textures.js'
@@ -391,10 +391,15 @@ const CONSOLE_BODY_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x55606e, 
 // legible as "something to operate" from across the room, which a floating
 // cube was not. The screen carries the interaction userData because it is
 // the part a player naturally aims at.
+// One console per step. A fetch task therefore places two: the pickup and
+// the place it is used. They share the same taskId and differ by stepIndex,
+// so the interaction layer knows which one you are standing at.
 function addTaskMarkers(group) {
-  return TASK_LOCATIONS.map((task) => {
-    const [x, y, z] = roomPosition(task.roomId, task.offset)
-    const userData = { interactable: true, kind: 'task', taskId: task.id }
+  const meshes = []
+  for (const task of TASK_LOCATIONS) {
+    task.steps.forEach((step, stepIndex) => {
+    const [x, y, z] = stepPosition(ROOM_LAYOUT, task.id, stepIndex)
+    const userData = { interactable: true, kind: 'task', taskId: task.id, stepIndex }
 
     const cabinet = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.5), CONSOLE_BODY_MATERIAL)
     cabinet.position.set(x, y + 0.45, z)
@@ -407,8 +412,10 @@ function addTaskMarkers(group) {
     screen.userData = userData
     group.add(screen)
 
-    return [cabinet, screen]
-  }).flat()
+    meshes.push(cabinet, screen)
+    })
+  }
+  return meshes
 }
 
 // A recessed floor grate with visible slats, rather than a plain disc.
