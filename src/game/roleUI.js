@@ -39,7 +39,7 @@ export function createRoleUI() {
 
   return {
     showRole(role, taskLabelsById) {
-      roleBanner.textContent = role === 'impostor' ? 'You are the Impostor' : 'You are a Crewmate'
+      roleBanner.textContent = role === 'impostor' ? 'Você é o Impostor' : 'Você é um Tripulante'
       roleBanner.style.display = 'flex'
       setTimeout(() => {
         roleBanner.style.display = 'none'
@@ -49,7 +49,7 @@ export function createRoleUI() {
       taskItemsById.clear()
 
       const title = document.createElement('div')
-      title.textContent = role === 'impostor' ? 'Impostor' : 'Tasks'
+      title.textContent = role === 'impostor' ? 'Impostor' : 'Tarefas'
       hud.appendChild(title)
 
       if (role !== 'impostor') {
@@ -72,7 +72,7 @@ export function createRoleUI() {
     },
 
     updateProgress(completed, total) {
-      if (progressLine) progressLine.textContent = `${completed} / ${total} tasks done`
+      if (progressLine) progressLine.textContent = `${completed} / ${total} tarefas concluídas`
     },
 
     hide() {

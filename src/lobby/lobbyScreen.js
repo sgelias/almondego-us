@@ -17,24 +17,24 @@ export function showLobby({ onHostAndJoin, onJoin, onStart }) {
   styleOverlay(overlay)
 
   const title = document.createElement('h1')
-  title.textContent = 'Among Us: First Person'
+  title.textContent = 'Among Us: Primeira Pessoa'
   overlay.appendChild(title)
 
   const nameInput = document.createElement('input')
   nameInput.type = 'text'
-  nameInput.placeholder = 'Your name'
+  nameInput.placeholder = 'Seu nome'
   overlay.appendChild(nameInput)
 
   const hostButton = document.createElement('button')
-  hostButton.textContent = 'Host & Join'
+  hostButton.textContent = 'Hospedar e Entrar'
   overlay.appendChild(hostButton)
 
   const joinRow = document.createElement('div')
   const addressInput = document.createElement('input')
   addressInput.type = 'text'
-  addressInput.placeholder = 'Host address (e.g. 192.168.1.10:8080)'
+  addressInput.placeholder = 'Endereço do host (ex: 192.168.1.10:8080)'
   const joinButton = document.createElement('button')
-  joinButton.textContent = 'Join'
+  joinButton.textContent = 'Entrar'
   joinRow.appendChild(addressInput)
   joinRow.appendChild(joinButton)
   overlay.appendChild(joinRow)
@@ -48,7 +48,7 @@ export function showLobby({ onHostAndJoin, onJoin, onStart }) {
   overlay.appendChild(playerList)
 
   const startButton = document.createElement('button')
-  startButton.textContent = 'Start Game'
+  startButton.textContent = 'Iniciar Partida'
   startButton.style.display = 'none'
   overlay.appendChild(startButton)
 

@@ -67,16 +67,16 @@ function getPromptText(target) {
     if (localRole !== 'crewmate') return null
     if (!assignedTaskIds.has(target.userData.taskId)) return null
     if (completedTaskIds.has(target.userData.taskId)) return null
-    return 'Hold E to do task'
+    return 'Segure E para fazer a tarefa'
   }
   if (kind === 'vent') {
-    return localRole === 'impostor' ? 'Press E to vent' : null
+    return localRole === 'impostor' ? 'Pressione E para usar o duto' : null
   }
   if (kind === 'emergencyButton') {
-    return 'Press E to call meeting'
+    return 'Pressione E para chamar reunião'
   }
   if (kind === 'player') {
-    return localRole === 'impostor' ? 'Press E to kill' : null
+    return localRole === 'impostor' ? 'Pressione E para matar' : null
   }
   return null
 }
@@ -124,7 +124,7 @@ function updateLobbyRoster(lobby) {
 
 function showDeathNotice() {
   const notice = document.createElement('div')
-  notice.textContent = 'You died. You can still look around, but no one can see you.'
+  notice.textContent = 'Você morreu. Você ainda pode olhar ao redor, mas ninguém consegue te ver.'
   notice.style.position = 'fixed'
   notice.style.top = '1rem'
   notice.style.left = '50%'
@@ -334,7 +334,7 @@ const lobby = showLobby({
   },
   onStart() {
     if (roster.size < MIN_PLAYERS_TO_START) {
-      lobby.showConnectionError(`Need at least ${MIN_PLAYERS_TO_START} players to start.`)
+      lobby.showConnectionError(`São necessários pelo menos ${MIN_PLAYERS_TO_START} jogadores para iniciar.`)
       return
     }
     netClient.send(MESSAGE_TYPE.START, {})

@@ -30,11 +30,11 @@ export function createNetClient(url) {
   })
 
   socket.addEventListener('error', () => {
-    if (!hasOpened) emit(CONNECTION_ERROR, { message: 'Could not reach the host.' })
+    if (!hasOpened) emit(CONNECTION_ERROR, { message: 'Não foi possível conectar ao host.' })
   })
 
   socket.addEventListener('close', () => {
-    if (!hasOpened) emit(CONNECTION_ERROR, { message: 'Could not reach the host.' })
+    if (!hasOpened) emit(CONNECTION_ERROR, { message: 'Não foi possível conectar ao host.' })
   })
 
   return {

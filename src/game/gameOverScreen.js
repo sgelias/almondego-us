@@ -13,11 +13,11 @@ export function showGameOver(winner, impostorName) {
   overlay.style.zIndex = '25'
 
   const title = document.createElement('h1')
-  title.textContent = winner === 'crew' ? 'Crewmates win!' : 'Impostor wins!'
+  title.textContent = winner === 'crew' ? 'Tripulantes vencem!' : 'Impostor vence!'
   overlay.appendChild(title)
 
   const impostorLine = document.createElement('div')
-  impostorLine.textContent = `The Impostor was: ${impostorName}`
+  impostorLine.textContent = `O Impostor era: ${impostorName}`
   overlay.appendChild(impostorLine)
 
   document.body.appendChild(overlay)

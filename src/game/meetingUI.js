@@ -47,10 +47,10 @@ export function createMeetingUI({ onVote }) {
       overlay.style.display = 'flex'
 
       const title = document.createElement('h1')
-      title.textContent = 'Emergency Meeting'
+      title.textContent = 'Reunião de Emergência'
       overlay.appendChild(title)
 
-      renderCountdown('Discussion', seconds)
+      renderCountdown('Discussão', seconds)
     },
 
     showVoting(livingPlayers, seconds) {
@@ -58,10 +58,10 @@ export function createMeetingUI({ onVote }) {
       overlay.style.display = 'flex'
 
       const title = document.createElement('h1')
-      title.textContent = 'Vote'
+      title.textContent = 'Votação'
       overlay.appendChild(title)
 
-      renderCountdown('Voting ends in', seconds)
+      renderCountdown('Votação termina em', seconds)
 
       let hasVoted = false
       const buttons = []
@@ -82,7 +82,7 @@ export function createMeetingUI({ onVote }) {
       }
 
       const skipButton = document.createElement('button')
-      skipButton.textContent = 'Skip'
+      skipButton.textContent = 'Pular'
       skipButton.addEventListener('click', () => castVote('skip'))
       overlay.appendChild(skipButton)
       buttons.push(skipButton)
@@ -95,8 +95,8 @@ export function createMeetingUI({ onVote }) {
 
       const message = document.createElement('h1')
       message.textContent = ejectedName
-        ? `${ejectedName} was ejected (${wasImpostor ? 'Impostor' : 'not the Impostor'})`
-        : 'No one was ejected'
+        ? `${ejectedName} foi expulso (${wasImpostor ? 'Impostor' : 'não era o Impostor'})`
+        : 'Ninguém foi expulso'
       overlay.appendChild(message)
     },
 

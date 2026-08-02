@@ -136,7 +136,7 @@ wss.on('connection', (socket) => {
     if (message.type === MESSAGE_TYPE.START) {
       if (socket.playerId !== hostId) return
       if (players.size < MIN_PLAYERS_TO_START) {
-        send(socket, MESSAGE_TYPE.ERROR, { message: 'Need at least 3 players to start.' })
+        send(socket, MESSAGE_TYPE.ERROR, { message: 'São necessários pelo menos 3 jogadores para iniciar.' })
         return
       }
       broadcastToAll(MESSAGE_TYPE.START, {})

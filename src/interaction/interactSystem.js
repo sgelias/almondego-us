@@ -41,7 +41,7 @@ export function createInteractSystem(camera, getInteractables, getPromptText) {
       const text = currentTarget
         ? getPromptText
           ? getPromptText(currentTarget)
-          : 'Press E to interact'
+          : 'Pressione E para interagir'
         : null
       prompt.textContent = text ?? ''
       prompt.style.display = text ? 'block' : 'none'

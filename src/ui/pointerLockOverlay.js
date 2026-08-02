@@ -1,6 +1,6 @@
 export function initPointerLockOverlay(domElement) {
   const overlay = document.createElement('div')
-  overlay.textContent = 'Click to play'
+  overlay.textContent = 'Clique para jogar'
   overlay.style.position = 'fixed'
   overlay.style.inset = '0'
   overlay.style.display = 'flex'
