@@ -194,3 +194,126 @@ export function drawResearchQuestion(randomFn = Math.random) {
   const picked = RESEARCH_QUESTIONS[Math.floor(randomFn() * RESEARCH_QUESTIONS.length)]
   return shuffleQuestion(picked, randomFn)
 }
+
+// --- content for the per-room minigames ---
+//
+// Each room's activity needs a different *shape* of exercise, not a
+// different skin on the same multiple choice. These generators produce that
+// shape; the rendering lives in src/game/minigames.js.
+
+function shuffled(items, randomFn) {
+  const copy = [...items]
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(randomFn() * (i + 1))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy
+}
+
+// Elétrica: match each expression to its result by joining two wires.
+// Results are shuffled independently of the prompts, so position never
+// gives the answer away.
+export function createWiringSet(randomFn = Math.random, pairCount = 3) {
+  const pairs = []
+  const usedResults = new Set()
+  let guard = 0
+  while (pairs.length < pairCount && guard < 100) {
+    guard += 1
+    const a = 2 + Math.floor(randomFn() * 9)
+    const b = 2 + Math.floor(randomFn() * 9)
+    const result = a * b
+    // Distinct results, or two wires would both be "correct" for one socket.
+    if (usedResults.has(result)) continue
+    usedResults.add(result)
+    pairs.push({ prompt: `${a} × ${b}`, result })
+  }
+  return {
+    type: 'fios',
+    title: 'Fiação',
+    instruction: 'Ligue cada conta ao seu resultado.',
+    prompts: shuffled(pairs, randomFn),
+    results: shuffled(pairs.map((pair) => pair.result), randomFn),
+  }
+}
+
+// Reator: put the values in ascending order. Ordering is a different skill
+// from computing, and it reads naturally as "stabilise the core".
+export function createOrderingSet(randomFn = Math.random, count = 5) {
+  const values = new Set()
+  let guard = 0
+  while (values.size < count && guard < 200) {
+    guard += 1
+    values.add(1 + Math.floor(randomFn() * 99))
+  }
+  const sorted = [...values].sort((a, b) => a - b)
+  return {
+    type: 'ordem',
+    title: 'Núcleo do reator',
+    instruction: 'Toque nos números do menor para o maior.',
+    values: shuffled(sorted, randomFn),
+    solution: sorted,
+  }
+}
+
+// Admin: read a small table and answer about it. The exercise is locating a
+// value in rows and columns, which is a real and separate skill.
+export function createTableRound(randomFn = Math.random) {
+  const rooms = ['Refeitório', 'Elétrica', 'Depósito', 'Navegação']
+  const counts = rooms.map(() => 1 + Math.floor(randomFn() * 9))
+  const targetIndex = Math.floor(randomFn() * rooms.length)
+  const answer = counts[targetIndex]
+
+  const options = new Set([answer])
+  let guard = 0
+  while (options.size < 4 && guard < 60) {
+    guard += 1
+    const candidate = 1 + Math.floor(randomFn() * 12)
+    if (candidate !== answer) options.add(candidate)
+  }
+
+  const shuffledOptions = shuffled([...options].map(String), randomFn)
+  return {
+    type: 'tabela',
+    title: 'Registro da tripulação',
+    instruction: 'Consulte a tabela e responda.',
+    rows: rooms.map((room, index) => ({ room, count: counts[index] })),
+    prompt: `Quantas pessoas foram registradas em ${rooms[targetIndex]}?`,
+    options: shuffledOptions,
+    answerIndex: shuffledOptions.indexOf(String(answer)),
+  }
+}
+
+// Armas: an arithmetic question whose options are the asteroids to shoot.
+// Reuses the maths generator so the difficulty stays calibrated in one place.
+export function createAsteroidRound(randomFn = Math.random) {
+  const question = createMathQuestion(randomFn)
+  return {
+    type: 'asteroides',
+    title: 'Asteroides',
+    instruction: 'Atire no asteroide com o resultado certo.',
+    prompt: question.prompt,
+    options: question.options,
+    answerIndex: question.answerIndex,
+  }
+}
+
+// Navegação: the reading comprehension, framed as choosing a route.
+export function createRouteRound(randomFn = Math.random) {
+  const picked = shuffleQuestion(READING_TASKS[Math.floor(randomFn() * READING_TASKS.length)], randomFn)
+  return { ...picked, type: 'rota', title: 'Rota de navegação', instruction: 'Leia o relatório e escolha.' }
+}
+
+// Which activity a room runs. Rooms without an entry fall back to the plain
+// question modal, so adding a room never breaks tasks.
+const ACTIVITY_BY_ROOM = {
+  electrical: createWiringSet,
+  reactor: createOrderingSet,
+  admin: createTableRound,
+  weapons: createAsteroidRound,
+  navigation: createRouteRound,
+}
+
+export function drawActivityForRoom(roomId, randomFn = Math.random) {
+  const build = ACTIVITY_BY_ROOM[roomId]
+  return build ? build(randomFn) : drawTaskQuestion(randomFn)
+}

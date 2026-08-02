@@ -42,11 +42,30 @@ npm run web     # só o servidor do cliente
 Seis jogadores. Um ou dois são **impostores** (o anfitrião escolhe), o resto é
 **tripulação**.
 
-**Tripulantes** completam tarefas espalhadas pela nave. Cada tarefa é uma
-pergunta educativa: uma conta, ou um texto curto com pergunta de compreensão.
-Errar tranca aquele console por alguns segundos e sorteia outra pergunta. No
+**Tripulantes** completam tarefas espalhadas pela nave. Cada sala tem sua
+própria atividade, e todas são educativas:
+
+| Sala | Atividade |
+| --- | --- |
+| Elétrica | Ligar cada conta ao seu resultado |
+| Armas | Atirar no asteroide com o resultado certo |
+| Navegação | Ler o relatório e escolher a rota |
+| Reator | Tocar os números do menor para o maior |
+| Admin | Consultar a tabela e responder |
+
+Duas tarefas atravessam a nave: buscar o fusível no Depósito para instalar na
+Elétrica, e coletar a amostra na Enfermaria para analisar no Reator. Setas
+flutuantes, visíveis através das paredes, mostram onde é a sua próxima etapa.
+
+Errar tranca aquele console por alguns segundos e sorteia outro exercício. No
 lobby ainda há um **desafio de pesquisa** — uma pergunta para a criança ir
 procurar a resposta, sem pressa e sem risco.
+
+**Emergências** interrompem todo mundo de tempos em tempos: uma queda de
+energia que cega a tripulação (mas não os impostores) até alguém religar o
+painel da Elétrica, e um vazamento de oxigênio que exige dois tripulantes
+acionando painéis em salas diferentes quase ao mesmo tempo — resolver cura a
+tripulação inteira. Falhar nunca mata ninguém.
 
 **Impostores** eliminam a tripulação. Não é um toque: são **três golpes**, e de
 perto. Quem apanha vê a tela piscar em vermelho e tem tempo de fugir. Impostores

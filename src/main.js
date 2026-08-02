@@ -22,7 +22,7 @@ import { getEventById, panelPosition } from '../shared/eventPool.js'
 import { ROOM_LABELS } from './ui/minimap.js'
 import { getSpellById } from '../shared/spellPool.js'
 import { createTaskQuiz, WRONG_ANSWER_LOCKOUT_MS } from './game/taskQuiz.js'
-import { drawTaskQuestion, drawResearchQuestion } from '../shared/questionBank.js'
+import { drawActivityForRoom, drawResearchQuestion } from '../shared/questionBank.js'
 import { getTaskById, stepPosition } from '../shared/taskPool.js'
 import { createMeetingUI } from './game/meetingUI.js'
 import { showGameOver } from './game/gameOverScreen.js'
@@ -329,7 +329,11 @@ function openTaskQuiz(taskId) {
   // educational tasks exist to encourage (AD-009).
   setBusy('quiz', true)
 
-  taskQuiz.show(drawTaskQuestion(Math.random), (result) => {
+  // Which activity you get depends on the room you are standing in - the
+  // whole point of this pass is that a task belongs to its room instead of
+  // being the same popup everywhere.
+  const finalStep = getTaskById(taskId).steps.at(-1)
+  taskQuiz.show(drawActivityForRoom(finalStep.roomId, Math.random), (result) => {
     setBusy('quiz', false)
     if (!gameEnded && !interactionsPaused) player.setFrozen(false)
 

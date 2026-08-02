@@ -7,6 +7,11 @@ import {
   shuffleQuestion,
   READING_TASKS,
   RESEARCH_QUESTIONS,
+  createWiringSet,
+  createOrderingSet,
+  createTableRound,
+  createAsteroidRound,
+  drawActivityForRoom,
 } from './questionBank.js'
 
 function seededRandom(seed) {
@@ -123,4 +128,68 @@ test('drawResearchQuestion returns a usable, shuffled research question', () => 
     assert.equal(q.options.length, 4)
     assert.ok(q.options[q.answerIndex])
   }
+})
+
+// --- per-room activity generators ---
+
+test('a wiring set pairs every prompt with a distinct, correct result', () => {
+  for (let seed = 1; seed <= 200; seed += 1) {
+    const set = createWiringSet(seededRandom(seed))
+    assert.equal(set.prompts.length, 3)
+    assert.equal(set.results.length, 3)
+    assert.equal(new Set(set.results).size, 3, 'two sockets share a value, so a wrong wire would look right')
+    for (const pair of set.prompts) {
+      const [a, b] = pair.prompt.split(' × ').map(Number)
+      assert.equal(a * b, pair.result, `${pair.prompt} does not equal ${pair.result}`)
+      assert.ok(set.results.includes(pair.result), 'a prompt has no socket to connect to')
+    }
+  }
+})
+
+test('an ordering set is solvable and actually shuffled', () => {
+  let everShuffled = false
+  for (let seed = 1; seed <= 200; seed += 1) {
+    const set = createOrderingSet(seededRandom(seed))
+    assert.equal(set.values.length, 5)
+    assert.equal(new Set(set.values).size, 5, 'duplicate values make "the next smallest" ambiguous')
+    assert.deepEqual([...set.solution], [...set.values].sort((a, b) => a - b))
+    if (set.values.join(',') !== set.solution.join(',')) everShuffled = true
+  }
+  assert.ok(everShuffled, 'the puzzle is always presented already solved')
+})
+
+test('a table round asks about a row that exists and offers its real value', () => {
+  for (let seed = 1; seed <= 200; seed += 1) {
+    const round = createTableRound(seededRandom(seed))
+    assert.equal(round.rows.length, 4)
+    assert.equal(round.options.length, 4)
+    assert.equal(new Set(round.options).size, 4)
+    const asked = round.rows.find((row) => round.prompt.includes(row.room))
+    assert.ok(asked, `the prompt asks about a room not in the table: ${round.prompt}`)
+    assert.equal(round.options[round.answerIndex], String(asked.count))
+  }
+})
+
+test('an asteroid round is a correct arithmetic question', () => {
+  for (let seed = 1; seed <= 200; seed += 1) {
+    const round = createAsteroidRound(seededRandom(seed))
+    assert.equal(round.options.length, 4)
+    assert.ok(round.options[round.answerIndex])
+    assert.ok(round.prompt.startsWith('Quanto é'))
+  }
+})
+
+test('every room with an activity produces one, and unknown rooms still get a question', () => {
+  const rooms = ['electrical', 'reactor', 'admin', 'weapons', 'navigation']
+  const types = new Set()
+  for (const roomId of rooms) {
+    const activity = drawActivityForRoom(roomId, seededRandom(7))
+    assert.ok(activity.type, `${roomId} produced an activity with no type`)
+    types.add(activity.type)
+  }
+  assert.equal(types.size, rooms.length, `rooms share an activity type: ${[...types]}`)
+
+  // A room with no bespoke activity must still be playable.
+  const fallback = drawActivityForRoom('storage', seededRandom(7))
+  assert.ok(fallback.options?.length >= 2, 'the fallback is not answerable')
 })

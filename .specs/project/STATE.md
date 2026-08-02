@@ -169,6 +169,13 @@ None currently blocking. Next planned work: Specify/Design/Tasks for the `bot-pl
 **Solution:** Measure displacement from first-seen position, and make the test client send `state` at 15 Hz exactly like `main.js` does. Both fixes changed the observed outcome immediately (5/5 bots moving; the bot impostor killing the human at t=16s).
 **Prevents:** A stub client is a model of a real client, and any behaviour the real client has that the stub omits is a hole the system under test will silently fall through. Before trusting a negative result from a harness, check that the harness actually performs the behaviours the code under test depends on - "the feature is broken" and "my fake client doesn't do the one thing that triggers the feature" look identical from the outside.
 
+### AD-013: One activity per room instead of one popup everywhere (2026-08-02)
+
+**Decision:** The final step of a task now runs an activity chosen by the room it happens in: wiring pairs in Elétrica, shooting the right asteroid in Armas, reading a report to pick a route in Navegação, ordering numbers in the Reator, reading a table in Admin. Rooms without a bespoke activity fall back to the plain question modal.
+**Reason:** Third of the three dynamics the user asked for. Every task was the same interaction with different text, and the room themes built during the aesthetics pass were purely decorative.
+**Trade-off:** Five renderers instead of one. Kept manageable by splitting content from presentation: `shared/questionBank.js` gained pure generators (unit-tested for solvability - distinct wiring results, a shuffled ordering puzzle, a table question whose answer is really in the table) and `src/game/minigames.js` only renders them. The overlay lifecycle - freeze, pointer-lock release, busy signal, wrong-answer lockout - stays in `taskQuiz.js`, so a new activity is a body, not another copy of that machinery.
+**Impact:** Each activity exercises a different skill rather than reskinning multiple choice: matching, computing under time pressure, comprehension, ordering, and table lookup. The wiring puzzle is two clicks per wire rather than a drag, because dragging is fiddly for a child on a trackpad and adds nothing to the exercise.
+
 ### AD-012: Ship emergencies, and two-step tasks (2026-08-02)
 
 **Decision:** Two additions to what players actually *do*. (a) Tasks are lists of steps; two of the six are fetch-and-carry across the ship, with the educational question only on the final step. (b) Periodic ship emergencies interrupt everyone: a blackout that collapses crew vision until someone reaches Elétrica, and an oxygen leak needing two crewmates on panels in two different rooms within a 12-second window, which heals everyone to full when fixed.
