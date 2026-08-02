@@ -106,40 +106,66 @@ function buildRoom(group, room, corridors) {
   buildWallWithGaps(group, cx - width / 2, cz - depth / 2, cz + depth / 2, height, gapsBySide.west, 'z')
 }
 
+// Three.js's Octree addon subdivides its bounding volume evenly on all 3
+// axes regardless of the geometry's shape. A long, thin box (a 50-unit
+// corridor run is only 4 units wide) keeps re-intersecting most of the
+// octree's children at every subdivision level, so its triangle count never
+// drops below the per-leaf threshold before hitting the max split depth -
+// the classic "long thin triangle" pathological case, and it made the
+// octree build exhaust several GB of memory (reported as the page loading
+// forever). Chunking every long run into pieces no longer than the
+// corridor's own width keeps every mesh roughly cube-shaped, which is what
+// octree subdivision actually needs to shrink triangle counts with depth.
+// See STATE.md L-013.
+const MAX_SEGMENT_LENGTH = CORRIDOR_WIDTH * 2
+
 // One straight, axis-aligned length of corridor between two consecutive
-// waypoints - floor plus a wall down each side. Direction is inferred from
-// which coordinate is constant between the two points (both are guaranteed
-// equal on one axis - see corridorRouting.js).
+// waypoints - floor plus a wall down each side, split into chunks no
+// longer than MAX_SEGMENT_LENGTH. Direction is inferred from which
+// coordinate is constant between the two points (both are guaranteed equal
+// on one axis - see corridorRouting.js).
 function buildCorridorSegment(group, x1, z1, x2, z2, height) {
   const length = Math.hypot(x2 - x1, z2 - z1)
   if (length < 0.01) return
-  const midX = (x1 + x2) / 2
-  const midZ = (z1 + z2) / 2
   const runsAlongX = z1 === z2
 
-  const floorGeometry = runsAlongX
-    ? new THREE.BoxGeometry(length, FLOOR_THICKNESS, CORRIDOR_WIDTH)
-    : new THREE.BoxGeometry(CORRIDOR_WIDTH, FLOOR_THICKNESS, length)
-  const floor = new THREE.Mesh(floorGeometry, FLOOR_MATERIAL)
-  floor.position.set(midX, -FLOOR_THICKNESS / 2, midZ)
-  group.add(floor)
+  const chunkCount = Math.max(1, Math.ceil(length / MAX_SEGMENT_LENGTH))
+  const chunkLength = length / chunkCount
 
-  if (runsAlongX) {
-    const wallGeometry = new THREE.BoxGeometry(length, height, WALL_THICKNESS)
-    const wallNorth = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
-    wallNorth.position.set(midX, height / 2, midZ + CORRIDOR_WIDTH / 2)
-    group.add(wallNorth)
-    const wallSouth = new THREE.Mesh(wallGeometry.clone(), WALL_MATERIAL)
-    wallSouth.position.set(midX, height / 2, midZ - CORRIDOR_WIDTH / 2)
-    group.add(wallSouth)
-  } else {
-    const wallGeometry = new THREE.BoxGeometry(WALL_THICKNESS, height, length)
-    const wallEast = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
-    wallEast.position.set(midX + CORRIDOR_WIDTH / 2, height / 2, midZ)
-    group.add(wallEast)
-    const wallWest = new THREE.Mesh(wallGeometry.clone(), WALL_MATERIAL)
-    wallWest.position.set(midX - CORRIDOR_WIDTH / 2, height / 2, midZ)
-    group.add(wallWest)
+  for (let i = 0; i < chunkCount; i += 1) {
+    const t0 = i / chunkCount
+    const t1 = (i + 1) / chunkCount
+    const cx1 = x1 + (x2 - x1) * t0
+    const cz1 = z1 + (z2 - z1) * t0
+    const cx2 = x1 + (x2 - x1) * t1
+    const cz2 = z1 + (z2 - z1) * t1
+    const midX = (cx1 + cx2) / 2
+    const midZ = (cz1 + cz2) / 2
+
+    const floorGeometry = runsAlongX
+      ? new THREE.BoxGeometry(chunkLength, FLOOR_THICKNESS, CORRIDOR_WIDTH)
+      : new THREE.BoxGeometry(CORRIDOR_WIDTH, FLOOR_THICKNESS, chunkLength)
+    const floor = new THREE.Mesh(floorGeometry, FLOOR_MATERIAL)
+    floor.position.set(midX, -FLOOR_THICKNESS / 2, midZ)
+    group.add(floor)
+
+    if (runsAlongX) {
+      const wallGeometry = new THREE.BoxGeometry(chunkLength, height, WALL_THICKNESS)
+      const wallNorth = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
+      wallNorth.position.set(midX, height / 2, midZ + CORRIDOR_WIDTH / 2)
+      group.add(wallNorth)
+      const wallSouth = new THREE.Mesh(wallGeometry.clone(), WALL_MATERIAL)
+      wallSouth.position.set(midX, height / 2, midZ - CORRIDOR_WIDTH / 2)
+      group.add(wallSouth)
+    } else {
+      const wallGeometry = new THREE.BoxGeometry(WALL_THICKNESS, height, chunkLength)
+      const wallEast = new THREE.Mesh(wallGeometry, WALL_MATERIAL)
+      wallEast.position.set(midX + CORRIDOR_WIDTH / 2, height / 2, midZ)
+      group.add(wallEast)
+      const wallWest = new THREE.Mesh(wallGeometry.clone(), WALL_MATERIAL)
+      wallWest.position.set(midX - CORRIDOR_WIDTH / 2, height / 2, midZ)
+      group.add(wallWest)
+    }
   }
 }
 
@@ -153,20 +179,80 @@ function buildBendPatch(group, x, z) {
   group.add(mesh)
 }
 
-function buildCorridorPath(group, corridor, roomsById) {
-  const roomA = roomsById.get(corridor.roomAId)
-  const roomB = roomsById.get(corridor.roomBId)
-  const height = Math.min(roomA.size[1], roomB.size[1])
-  const points = corridor.points
+// Two different logical connections routinely share part of their physical
+// path - not just identical detours (lowerEngine->security and
+// upperEngine->security both routing past the same obstacle the same way),
+// but also two corridors that merely *leave the same room in the same
+// direction* before diverging further on (cafeteria->weapons and
+// cafeteria->admin both head east along cafeteria's wall before splitting
+// off). Building each corridor independently draws that shared stretch
+// once per connection, fully or partially overlapping. Overlapping
+// geometry can never be separated by any spatial subdivision, which is
+// exactly what made the world Octree recurse to its max depth and exhaust
+// memory instead of ever bottoming out (see STATE.md L-013).
+//
+// Fixing only exact-duplicate segments left hundreds of partial overlaps
+// (two segments on the same line, covering different but intersecting
+// ranges) - the general fix is the same interval-merge sweep
+// buildWallWithGaps already uses for door gaps, applied here to merge
+// *occupied* ranges instead of *empty* ones: group every segment by the
+// line it runs along (axis + fixed coordinate), then collapse each group's
+// overlapping/touching ranges into the minimal set of non-overlapping
+// spans before any geometry is built.
+function mergeRangesOnLine(ranges) {
+  const sorted = [...ranges].sort((a, b) => a.start - b.start)
+  const merged = []
+  for (const range of sorted) {
+    const last = merged[merged.length - 1]
+    if (last && range.start <= last.end + 1e-6) {
+      last.end = Math.max(last.end, range.end)
+      last.height = Math.min(last.height, range.height)
+    } else {
+      merged.push({ ...range })
+    }
+  }
+  return merged
+}
 
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const [x1, z1] = points[i]
-    const [x2, z2] = points[i + 1]
-    buildCorridorSegment(group, x1, z1, x2, z2, height)
+function collectCorridorGeometry(corridors, roomsById) {
+  const lineGroups = new Map()
+  const bendsByKey = new Map()
+
+  for (const corridor of corridors) {
+    const roomA = roomsById.get(corridor.roomAId)
+    const roomB = roomsById.get(corridor.roomBId)
+    const height = Math.min(roomA.size[1], roomB.size[1])
+    const points = corridor.points
+
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const [x1, z1] = points[i]
+      const [x2, z2] = points[i + 1]
+      const runsAlongX = z1 === z2
+      const lineKey = runsAlongX ? `x:${z1}` : `z:${x1}`
+      const start = runsAlongX ? Math.min(x1, x2) : Math.min(z1, z2)
+      const end = runsAlongX ? Math.max(x1, x2) : Math.max(z1, z2)
+
+      if (!lineGroups.has(lineKey)) lineGroups.set(lineKey, { runsAlongX, fixed: runsAlongX ? z1 : x1, ranges: [] })
+      lineGroups.get(lineKey).ranges.push({ start, end, height })
+    }
+    for (let i = 1; i < points.length - 1; i += 1) {
+      const [x, z] = points[i]
+      bendsByKey.set(`${x},${z}`, { x, z })
+    }
   }
-  for (let i = 1; i < points.length - 1; i += 1) {
-    buildBendPatch(group, points[i][0], points[i][1])
+
+  const segments = []
+  for (const { runsAlongX, fixed, ranges } of lineGroups.values()) {
+    for (const merged of mergeRangesOnLine(ranges)) {
+      segments.push(
+        runsAlongX
+          ? { x1: merged.start, z1: fixed, x2: merged.end, z2: fixed, height: merged.height }
+          : { x1: fixed, z1: merged.start, x2: fixed, z2: merged.end, height: merged.height }
+      )
+    }
   }
+
+  return { segments, bends: [...bendsByKey.values()] }
 }
 
 function roomPosition(roomId, offset) {
@@ -213,8 +299,12 @@ export function buildSkeldMap() {
   for (const room of ROOM_LAYOUT) {
     buildRoom(group, room, corridors)
   }
-  for (const corridor of corridors) {
-    buildCorridorPath(group, corridor, roomsById)
+  const { segments, bends } = collectCorridorGeometry(corridors, roomsById)
+  for (const segment of segments) {
+    buildCorridorSegment(group, segment.x1, segment.z1, segment.x2, segment.z2, segment.height)
+  }
+  for (const bend of bends) {
+    buildBendPatch(group, bend.x, bend.z)
   }
 
   const taskMeshes = addTaskMarkers(group)
