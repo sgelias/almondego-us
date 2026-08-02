@@ -5,6 +5,12 @@ const CAPSULE_RADIUS = 0.35
 const CAPSULE_HEIGHT = 1.0
 const LERP_RATE = 10
 
+// Network "position" is the sender's camera/eye position (see main.js), which
+// sits at the top of their capsule. This mesh's CapsuleGeometry is centered on
+// its own origin, so it must be drawn EYE_TO_CENTER_OFFSET below the eye to
+// land on the floor instead of floating.
+const EYE_TO_CENTER_OFFSET = CAPSULE_HEIGHT / 2
+
 const AVATAR_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x33aaff })
 
 function createLabel(name) {
@@ -21,6 +27,10 @@ function createLabel(name) {
   return label
 }
 
+function toMeshPosition(position) {
+  return [position[0], position[1] - EYE_TO_CENTER_OFFSET, position[2]]
+}
+
 // SPEC_DEVIATION: design.md's signature was createRemotePlayers(scene, labelRenderer).
 // CSS2DObject only needs to be added to the scene graph - the CSS2DRenderer that
 // draws it doesn't need a reference back, so the unused param was dropped.
@@ -34,13 +44,18 @@ export function createRemotePlayers(scene) {
         new THREE.CapsuleGeometry(CAPSULE_RADIUS, CAPSULE_HEIGHT, 4, 8),
         AVATAR_MATERIAL
       )
-      mesh.add(createLabel(name))
-      mesh.position.set(position[0], position[1], position[2])
+      const label = createLabel(name)
+      mesh.add(label)
+
+      const [x, y, z] = toMeshPosition(position)
+      mesh.position.set(x, y, z)
       scene.add(mesh)
+
       entry = {
         mesh,
+        label,
         lastSeq: -1,
-        target: new THREE.Vector3(position[0], position[1], position[2]),
+        target: new THREE.Vector3(x, y, z),
         targetRotationY: rotationY,
       }
       players.set(id, entry)
@@ -48,13 +63,16 @@ export function createRemotePlayers(scene) {
 
     if (seq <= entry.lastSeq) return
     entry.lastSeq = seq
-    entry.target.set(position[0], position[1], position[2])
+    const [x, y, z] = toMeshPosition(position)
+    entry.target.set(x, y, z)
     entry.targetRotationY = rotationY
   }
 
   function remove(id) {
     const entry = players.get(id)
     if (!entry) return
+    entry.mesh.remove(entry.label)
+    entry.label.element.remove()
     scene.remove(entry.mesh)
     entry.mesh.geometry.dispose()
     players.delete(id)

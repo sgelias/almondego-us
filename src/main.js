@@ -64,6 +64,7 @@ function updateLobbyRoster(lobby) {
 }
 
 function connect(url, name, lobby) {
+  if (netClient) return
   netClient = createNetClient(url)
 
   netClient.on(CONNECTED, () => {
@@ -104,6 +105,7 @@ function connect(url, name, lobby) {
 }
 
 function startGame(lobby) {
+  if (started) return
   started = true
   lobby.hide()
   initPointerLockOverlay(canvas)
